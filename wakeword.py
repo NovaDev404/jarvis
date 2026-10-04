@@ -1,45 +1,38 @@
-import pyaudio
 import numpy as np
 from openwakeword.model import Model
+import audio_queue
+import os
 
 
 class WakeWord:
     def __init__(self, model_path="hey_jarvis_v0.1.tflite"):
-        self.model = Model(
-            wakeword_models=[model_path],
-            inference_framework="tflite"
-        )
+        # Check if custom model exists, otherwise use default
+        if os.path.exists(model_path):
+            self.model = Model(
+                wakeword_models=[model_path],
+                inference_framework="tflite"
+            )
+        else:
+            self.model = Model(inference_framework="tflite")
 
         self.model_name = list(self.model.models.keys())[0]
-
-        self.audio = pyaudio.PyAudio()
-        self.stream = self.audio.open(
-            format=pyaudio.paInt16,
-            channels=1,
-            rate=16000,
-            input=True,
-            frames_per_buffer=1280
-        )
-
         self.triggered = False
 
     def wait(self):
         print("Waiting for wake word...")
         """Block until 'Hey Jarvis' is detected."""
         while True:
-            data = self.stream.read(1280, exception_on_overflow=False)
-            frame = np.frombuffer(data, dtype=np.int16)
+            frame = audio_queue.get_chunk(timeout=0.1)
+            if frame is None:
+                continue
 
-            score = self.model.predict(frame)[self.model_name]
+            prediction = self.model.predict(frame)
+            score = prediction[self.model_name]
 
-            if not self.triggered and score > 0.5:
+            if not self.triggered and score > 0.3:
                 self.triggered = True
+                print("Wake word detected!")
                 return
 
             if self.triggered and score < 0.2:
                 self.triggered = False
-
-    def close(self):
-        self.stream.stop_stream()
-        self.stream.close()
-        self.audio.terminate()

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Audio Stream Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        #status {
+            margin-top: 20px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Jarvis Voice Assistant</h1>
+
+    <button id="startBtn" onclick="startRecording()">
+        Start Listening
+    </button>
+
+    <div id="status">Ready</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+
+    <script>
+        let socket;
+        let audioContext;
+        let processor;
+        let source;
+        let stream;
+
+        function convertFloat32ToInt16(float32Array) {
+            const int16Array = new Int16Array(float32Array.length);
+
+            for (let i = 0; i < float32Array.length; i++) {
+                let s = Math.max(-1, Math.min(1, float32Array[i]));
+
+                int16Array[i] =
+                    s < 0
+                        ? s * 0x8000
+                        : s * 0x7FFF;
+            }
+
+            return int16Array;
+        }
+
+        async function startRecording() {
+            const btn = document.getElementById("startBtn");
+            const status = document.getElementById("status");
+
+            btn.disabled = true;
+            status.textContent = "Requesting microphone permission...";
+
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error(
+                        "Microphone access not supported. Use HTTPS or localhost."
+                    );
+                }
+
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        channelCount: 1,
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }
+                });
+
+                status.textContent = "Connecting...";
+
+                socket = io();
+
+                socket.on("connect", async () => {
+                    status.textContent = "Listening...";
+
+                    audioContext = new (
+                        window.AudioContext ||
+                        window.webkitAudioContext
+                    )();
+
+                    if (audioContext.state === "suspended") {
+                        await audioContext.resume();
+                    }
+
+                    source = audioContext.createMediaStreamSource(stream);
+                    processor = audioContext.createScriptProcessor(
+                        2048,
+                        1,
+                        1
+                    );
+
+                    socket.emit(
+                        "sample_rate",
+                        audioContext.sampleRate
+                    );
+
+                    processor.onaudioprocess = (event) => {
+                        const input = event.inputBuffer.getChannelData(0);
+                        const int16 = convertFloat32ToInt16(input);
+                        socket.emit(
+                            "audio_data",
+                            int16.buffer
+                        );
+                    };
+
+                    source.connect(processor);
+                    processor.connect(audioContext.destination);
+                });
+
+                socket.on("connect_error", (error) => {
+                    status.textContent = "Socket.IO error";
+                    btn.disabled = false;
+                    stopRecording();
+                });
+
+            } catch (error) {
+                status.textContent =
+                    "Error: " + error.message;
+                btn.disabled = false;
+            }
+        }
+
+        function stopRecording() {
+            if (processor) {
+                processor.disconnect();
+                processor = null;
+            }
+
+            if (source) {
+                source.disconnect();
+                source = null;
+            }
+
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+
+            if (stream) {
+                stream.getTracks().forEach(
+                    track => track.stop()
+                );
+
+                stream = null;
+            }
+
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+        }
+    </script>
+</body>
+</html>

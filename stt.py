@@ -1,8 +1,7 @@
 import queue
-
 import numpy as np
-import sounddevice as sd
 from faster_whisper import WhisperModel
+import audio_queue
 
 
 model = WhisperModel(
@@ -12,55 +11,21 @@ model = WhisperModel(
 )
 
 RATE = 16000
-CHUNK = 1600  # 100 ms
+CHUNK = 1280  # 80ms (matches wake word chunk size)
 
-SILENCE_THRESHOLD = 0.015
-SILENCE_DURATION = 0.8
+SILENCE_THRESHOLD = 0.007  # Lowered to catch quieter speech
+SILENCE_DURATION = 1.5  # Increased to allow for natural pauses in speech
 MAX_DURATION = 15
 
-
-audio_queue = queue.Queue()
-stream = None
 paused = False
 
 
-def _callback(indata, frames, time_info, status):
-    if status:
-        print("Audio:", status)
-
-    # Don't collect audio while TTS is playing.
-    if not paused:
-        audio_queue.put(indata[:, 0].copy())
-
-
 def start():
-    global stream
-
-    if stream is not None:
-        return
-
-    print("Starting STT microphone...")
-
-    stream = sd.InputStream(
-        samplerate=RATE,
-        channels=1,
-        dtype="float32",
-        blocksize=CHUNK,
-        callback=_callback
-    )
-
-    stream.start()
-
-    print("STT microphone ready.")
+    print("STT ready (using WebSocket audio stream).")
 
 
 def stop():
-    global stream
-
-    if stream is not None:
-        stream.stop()
-        stream.close()
-        stream = None
+    print("STT stopped.")
 
 
 def pause():
@@ -75,11 +40,7 @@ def resume():
 
 def flush():
     """Discard audio captured before listening again."""
-    while True:
-        try:
-            audio_queue.get_nowait()
-        except queue.Empty:
-            break
+    audio_queue.clear()
 
 
 def listen():
@@ -89,35 +50,55 @@ def listen():
     started = False
     silent_time = 0.0
     total_time = 0.0
+    chunk_count = 0
 
     while total_time < MAX_DURATION:
+        # Don't collect audio while TTS is playing
+        if paused:
+            audio_queue.get_chunk(timeout=0.1)
+            continue
 
-        # Wait for the next chunk of microphone audio.
-        audio = audio_queue.get()
+        # Wait for the next chunk of audio from WebSocket
+        audio = audio_queue.get_chunk(timeout=0.1)
+        if audio is None:
+            continue
 
-        frames.append(audio)
+        chunk_count += 1
 
-        volume = np.sqrt(np.mean(audio ** 2))
+        # Convert int16 to float32 for whisper
+        audio_float = audio.astype(np.float32) / 32768.0
+        frames.append(audio_float)
+
+        volume = np.sqrt(np.mean(audio_float ** 2))
+
+        # Debug: print volume every 50 chunks
+        if chunk_count % 50 == 0:
+            print(f"STT: chunk {chunk_count}, volume={volume:.4f}, started={started}, silent_time={silent_time:.2f}s")
 
         if volume > SILENCE_THRESHOLD:
+            if not started:
+                print(f"STT: speech started at chunk {chunk_count}, volume={volume:.4f}")
             started = True
             silent_time = 0.0
 
         elif started:
             silent_time += CHUNK / RATE
+            if chunk_count % 50 == 0:
+                print(f"STT: silence accumulating, silent_time={silent_time:.2f}s")
 
         total_time += CHUNK / RATE
 
         # Stop after speech has ended.
         if started and silent_time >= SILENCE_DURATION:
+            print(f"STT: silence detected after {silent_time:.2f}s, stopping. Total frames: {len(frames)}")
             break
 
     if not frames:
+        print("STT: no frames collected")
         return ""
 
     audio_data = np.concatenate(frames)
-
-    print("Transcribing...")
+    print(f"STT: transcribing {len(audio_data)} samples ({len(audio_data)/16000:.2f}s)...")
 
     segments, info = model.transcribe(
         audio_data,

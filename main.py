@@ -3,7 +3,11 @@ import time
 import wakeword
 import stt
 import tts
+import web_server
 
+
+# Start the WebSocket server in a background thread
+web_server.start_in_thread(host='0.0.0.0', port=5009)
 
 ww = wakeword.WakeWord()
 
