@@ -1,106 +1,77 @@
 <!DOCTYPE html>
 <html>
-
-<head>
+  <head>
     <meta charset="UTF-8">
     <title>Jarvis Voice Assistant</title>
-
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 50px auto;
-            padding: 20px;
-        }
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 600px;
+        margin: 50px auto;
+        padding: 20px;
+      }
 
-        button {
-            background: #4CAF50;
-            color: white;
-            border: none;
-            padding: 15px 30px;
-            font-size: 16px;
-            cursor: pointer;
-            border-radius: 5px;
-        }
+      button {
+        background: #4CAF50;
+        color: white;
+        border: none;
+        padding: 15px 30px;
+        font-size: 16px;
+        cursor: pointer;
+        border-radius: 5px;
+      }
 
-        button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
 
-        #status {
-            margin-top: 20px;
-            font-size: 18px;
-        }
+      #status {
+        margin-top: 20px;
+        font-size: 18px;
+      }
 
-        #debug {
-            margin-top: 20px;
-            font-family: monospace;
-            white-space: pre-wrap;
-            font-size: 13px;
-        }
+      #debug {
+        margin-top: 20px;
+        font-family: monospace;
+        white-space: pre-wrap;
+        font-size: 13px;
+      }
     </style>
-</head>
+  </head>
+  <body>
+    <h1>Jarvis Voice Assistant</h1>
+    <button id="startBtn" onclick="startRecording()"> Start Listening </button>
+    <div id="status"> Ready </div>
+    <div id="debug"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+      let socket = null;
+      let audioContext = null;
+      let stream = null;
+      let source = null;
+      let workletNode = null;
+      let muteGain = null;
+      const status = document.getElementById("status");
+      const debug = document.getElementById("debug");
+      const startBtn = document.getElementById("startBtn");
 
-<body>
+      function setStatus(text) {
+        status.textContent = text;
+      }
 
-<h1>Jarvis Voice Assistant</h1>
-
-<button id="startBtn" onclick="startRecording()">
-    Start Listening
-</button>
-
-<div id="status">
-    Ready
-</div>
-
-<div id="debug"></div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
-
-<script>
-
-let socket = null;
-let audioContext = null;
-let stream = null;
-let source = null;
-let workletNode = null;
-let muteGain = null;
-
-const status =
-    document.getElementById("status");
-
-const debug =
-    document.getElementById("debug");
-
-const startBtn =
-    document.getElementById("startBtn");
-
-
-function setStatus(text) {
-
-    status.textContent = text;
-
-}
-
-
-function debugLog(text) {
-
-    console.log(text);
-
-    debug.textContent += text + "\n";
-
-}
-
-
-/*
- * AudioWorklet processor.
- *
- * Converts Float32 microphone samples into
- * signed 16-bit PCM and sends them to the
- * main page.
- */
-const workletCode = `
+      function debugLog(text) {
+        console.log(text);
+        debug.textContent += text + "\n";
+      }
+      /*
+       * AudioWorklet processor.
+       *
+       * Converts Float32 microphone samples into
+       * signed 16-bit PCM and sends them to the
+       * main page.
+       */
+      const workletCode = `
 
 class MicProcessor extends AudioWorkletProcessor {
 
@@ -179,388 +150,167 @@ registerProcessor(
 );
 
 `;
-
-
-async function startRecording() {
-
-    startBtn.disabled = true;
-
-    debug.textContent = "";
-
-    setStatus(
-        "Requesting microphone..."
-    );
-
-    try {
-
-        /*
-         * ----------------------------------------------------
-         * Microphone
-         * ----------------------------------------------------
-         */
-
-        stream =
-            await navigator.mediaDevices.getUserMedia({
-
-                audio: {
-
-                    channelCount: {
-                        ideal: 1
-                    },
-
-                    sampleRate: {
-                        ideal: 16000
-                    },
-
-                    sampleSize: {
-                        ideal: 16
-                    },
-
-                    echoCancellation: true,
-
-                    noiseSuppression: true,
-
-                    autoGainControl: true
-                }
+      async function startRecording() {
+        startBtn.disabled = true;
+        debug.textContent = "";
+        setStatus("Requesting microphone...");
+        try {
+          /*
+           * ----------------------------------------------------
+           * Microphone
+           * ----------------------------------------------------
+           */
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              channelCount: {
+                ideal: 1
+              },
+              sampleRate: {
+                ideal: 16000
+              },
+              sampleSize: {
+                ideal: 16
+              },
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
+          });
+          const track = stream.getAudioTracks()[0];
+          if (!track) {
+            throw new Error("No microphone audio track.");
+          }
+          const settings = track.getSettings();
+          debugLog("Mic device: " + (track.label || "unknown"));
+          debugLog("Mic state: " + track.readyState);
+          debugLog("Mic enabled: " + track.enabled);
+          debugLog("Mic muted: " + track.muted);
+          debugLog("Mic sample rate: " + (settings.sampleRate || "unknown"));
+          debugLog("Mic channels: " + (settings.channelCount || "unknown"));
+          /*
+           * ----------------------------------------------------
+           * Socket.IO
+           * ----------------------------------------------------
+           */
+          socket = io();
+          socket.on("connect", async () => {
+            setStatus("Starting audio...");
+            /*
+             * Prefer 16 kHz.
+             */
+            audioContext = new AudioContext({
+              sampleRate: 16000
             });
-
-
-        const track =
-            stream.getAudioTracks()[0];
-
-
-        if (!track) {
-
-            throw new Error(
-                "No microphone audio track."
-            );
-        }
-
-
-        const settings =
-            track.getSettings();
-
-
-        debugLog(
-            "Mic device: " +
-            (track.label || "unknown")
-        );
-
-        debugLog(
-            "Mic state: " +
-            track.readyState
-        );
-
-        debugLog(
-            "Mic enabled: " +
-            track.enabled
-        );
-
-        debugLog(
-            "Mic muted: " +
-            track.muted
-        );
-
-        debugLog(
-            "Mic sample rate: " +
-            (settings.sampleRate || "unknown")
-        );
-
-        debugLog(
-            "Mic channels: " +
-            (settings.channelCount || "unknown")
-        );
-
-
-        /*
-         * ----------------------------------------------------
-         * Socket.IO
-         * ----------------------------------------------------
-         */
-
-        socket = io();
-
-
-        socket.on(
-            "connect",
-            async () => {
-
-                setStatus(
-                    "Starting audio..."
-                );
-
-
-                /*
-                 * Prefer 16 kHz.
-                 */
-                audioContext =
-                    new AudioContext({
-                        sampleRate: 16000
-                    });
-
-
-                if (
-                    audioContext.state ===
-                    "suspended"
-                ) {
-
-                    await audioContext.resume();
-                }
-
-
-                debugLog(
-                    "AudioContext state: " +
-                    audioContext.state
-                );
-
-                debugLog(
-                    "AudioContext rate: " +
-                    audioContext.sampleRate
-                );
-
-
-                /*
-                 * Tell Python the real output
-                 * sample rate.
-                 */
-                socket.emit(
-                    "sample_rate",
-                    audioContext.sampleRate
-                );
-
-
-                /*
-                 * Create the AudioWorklet.
-                 */
-                const blob =
-                    new Blob(
-                        [workletCode],
-                        {
-                            type:
-                                "application/javascript"
-                        }
-                    );
-
-
-                const workletUrl =
-                    URL.createObjectURL(blob);
-
-
-                await audioContext.audioWorklet.addModule(
-                    workletUrl
-                );
-
-
-                URL.revokeObjectURL(
-                    workletUrl
-                );
-
-
-                /*
-                 * Microphone source.
-                 */
-                source =
-                    audioContext.createMediaStreamSource(
-                        stream
-                    );
-
-
-                /*
-                 * AudioWorklet.
-                 */
-                workletNode =
-                    new AudioWorkletNode(
-                        audioContext,
-                        "jarvis-mic-processor",
-                        {
-                            numberOfInputs: 1,
-                            numberOfOutputs: 1,
-                            channelCount: 1,
-                            channelCountMode: "explicit",
-                            channelInterpretation: "speakers"
-                        }
-                    );
-
-
-                let lastDebug =
-                    performance.now();
-
-
-                workletNode.port.onmessage =
-                    (event) => {
-
-                        const data =
-                            event.data;
-
-
-                        /*
-                         * Send raw PCM to Python.
-                         */
-                        socket.emit(
-                            "audio_data",
-                            data.pcm
-                        );
-
-
-                        /*
-                         * Debug microphone level.
-                         */
-                        const now =
-                            performance.now();
-
-
-                        if (
-                            now - lastDebug >= 1000
-                        ) {
-
-                            lastDebug = now;
-
-                            debugLog(
-                                "Mic RMS: " +
-                                data.rms.toFixed(4) +
-                                " peak: " +
-                                data.peak.toFixed(4)
-                            );
-                        }
-                    };
-
-
-                /*
-                 * Zero-output gain node.
-                 *
-                 * The worklet MUST remain in the audio
-                 * graph, but we do not want to play the
-                 * microphone through the speakers.
-                 */
-                muteGain =
-                    audioContext.createGain();
-
-                muteGain.gain.value = 0;
-
-
-                source.connect(
-                    workletNode
-                );
-
-                workletNode.connect(
-                    muteGain
-                );
-
-                muteGain.connect(
-                    audioContext.destination
-                );
-
-
-                /*
-                 * Make sure the track is actually enabled.
-                 */
-                track.enabled = true;
-
-
-                setStatus(
-                    "Listening..."
-                );
-
+            if (audioContext.state === "suspended") {
+              await audioContext.resume();
             }
-        );
-
-
-        socket.on(
-            "connect_error",
+            debugLog("AudioContext state: " + audioContext.state);
+            debugLog("AudioContext rate: " + audioContext.sampleRate);
+            /*
+             * Tell Python the real output
+             * sample rate.
+             */
+            socket.emit("sample_rate", audioContext.sampleRate);
+            /*
+             * Create the AudioWorklet.
+             */
+            const blob = new Blob(
+              [workletCode], {
+                type: "application/javascript"
+              });
+            const workletUrl = URL.createObjectURL(blob);
+            await audioContext.audioWorklet.addModule(workletUrl);
+            URL.revokeObjectURL(workletUrl);
+            /*
+             * Microphone source.
+             */
+            source = audioContext.createMediaStreamSource(stream);
+            /*
+             * AudioWorklet.
+             */
+            workletNode = new AudioWorkletNode(audioContext, "jarvis-mic-processor", {
+              numberOfInputs: 1,
+              numberOfOutputs: 1,
+              channelCount: 1,
+              channelCountMode: "explicit",
+              channelInterpretation: "speakers"
+            });
+            let lastDebug = performance.now();
+            workletNode.port.onmessage = (event) => {
+              const data = event.data;
+              /*
+               * Send raw PCM to Python.
+               */
+              socket.emit("audio_data", data.pcm);
+              /*
+               * Debug microphone level.
+               */
+              const now = performance.now();
+              if (now - lastDebug >= 1000) {
+                lastDebug = now;
+                debugLog("Mic RMS: " + data.rms.toFixed(4) + " peak: " + data.peak.toFixed(4));
+              }
+            };
+            /*
+             * Zero-output gain node.
+             *
+             * The worklet MUST remain in the audio
+             * graph, but we do not want to play the
+             * microphone through the speakers.
+             */
+            muteGain = audioContext.createGain();
+            muteGain.gain.value = 0;
+            source.connect(workletNode);
+            workletNode.connect(muteGain);
+            muteGain.connect(audioContext.destination);
+            /*
+             * Make sure the track is actually enabled.
+             */
+            track.enabled = true;
+            setStatus("Listening...");
+          });
+          socket.on("connect_error",
             (error) => {
+              console.error(error);
+              setStatus("Socket error: " + error.message);
+              stopRecording();
+              startBtn.disabled = false;
+            });
+        } catch (error) {
+          console.error(error);
+          setStatus("Microphone error: " + error.message);
+          debugLog("ERROR: " + error.message);
+          stopRecording();
+          startBtn.disabled = false;
+        }
+      }
 
-                console.error(
-                    error
-                );
-
-                setStatus(
-                    "Socket error: " +
-                    error.message
-                );
-
-                stopRecording();
-
-                startBtn.disabled = false;
-            }
-        );
-
-
-    } catch (error) {
-
-        console.error(error);
-
-        setStatus(
-            "Microphone error: " +
-            error.message
-        );
-
-        debugLog(
-            "ERROR: " +
-            error.message
-        );
-
-        stopRecording();
-
-        startBtn.disabled = false;
-    }
-}
-
-
-function stopRecording() {
-
-    if (workletNode) {
-
-        workletNode.disconnect();
-
-        workletNode = null;
-    }
-
-
-    if (muteGain) {
-
-        muteGain.disconnect();
-
-        muteGain = null;
-    }
-
-
-    if (source) {
-
-        source.disconnect();
-
-        source = null;
-    }
-
-
-    if (audioContext) {
-
-        audioContext.close();
-
-        audioContext = null;
-    }
-
-
-    if (stream) {
-
-        stream
-            .getTracks()
-            .forEach(
-                track => track.stop()
-            );
-
-        stream = null;
-    }
-
-
-    if (socket) {
-
-        socket.disconnect();
-
-        socket = null;
-    }
-}
-
-</script>
-
-</body>
+      function stopRecording() {
+        if (workletNode) {
+          workletNode.disconnect();
+          workletNode = null;
+        }
+        if (muteGain) {
+          muteGain.disconnect();
+          muteGain = null;
+        }
+        if (source) {
+          source.disconnect();
+          source = null;
+        }
+        if (audioContext) {
+          audioContext.close();
+          audioContext = null;
+        }
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+          stream = null;
+        }
+        if (socket) {
+          socket.disconnect();
+          socket = null;
+        }
+      }
+    </script>
+  </body>
 </html>
