@@ -33,7 +33,7 @@ class WakeWord:
 
         self.triggered = False
 
-    def wait():
+    def wait(self):
 
         print(
             "Waiting for wake word..."
