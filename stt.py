@@ -314,6 +314,8 @@ def listen():
     # Whisper
     # ========================================================
 
+    print("Transcribing...")
+    
     segments, info = model.transcribe(
         audio_data,
 
