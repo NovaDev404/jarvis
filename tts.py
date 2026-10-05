@@ -2,7 +2,6 @@ from pathlib import Path
 import tempfile
 import uuid
 import subprocess
-import time
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -27,8 +26,6 @@ def start():
                 "--output_file", str(current_output_path),
             ],
             stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
             text=True,
         )
         print("TTS model loaded.")
@@ -44,7 +41,8 @@ def stop():
 
 
 def speak(text):
-    """Send text to the running piper process and wait for the WAV file."""
+    """Send text to the running piper process, close stdin to trigger EOF."""
+    global piper_process, current_output_path
     if piper_process is None:
         raise RuntimeError("TTS model not loaded. Call start() first.")
 
@@ -56,15 +54,16 @@ def speak(text):
     piper_process.stdin.write(text + "\n")
     piper_process.stdin.flush()
 
-    # Close stdin to signal piper to process
+    # Close stdin to send EOF signal - piper will process and exit
     piper_process.stdin.close()
 
-    # Wait for piper to finish generating the audio
+    # Wait for piper to finish
     piper_process.wait()
 
     output_path = current_output_path
 
-    # Stop the process
-    stop()
+    # Clean up
+    piper_process = None
+    current_output_path = None
 
     return output_path
