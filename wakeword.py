@@ -1,7 +1,5 @@
 import os
-import time
 
-import numpy as np
 from openwakeword.model import Model
 
 import audio_queue
@@ -9,14 +7,22 @@ import audio_queue
 
 class WakeWord:
 
-    def __init__(self, model_path="hey_jarvis_v0.1.tflite"):
+    def __init__(
+        self,
+        model_path="hey_jarvis_v0.1.tflite"
+    ):
 
         if os.path.exists(model_path):
+
             self.model = Model(
-                wakeword_models=[model_path],
+                wakeword_models=[
+                    model_path
+                ],
                 inference_framework="tflite"
             )
+
         else:
+
             self.model = Model(
                 inference_framework="tflite"
             )
@@ -27,11 +33,11 @@ class WakeWord:
 
         self.triggered = False
 
-        self._debug_last = time.monotonic()
+    def wait():
 
-    def wait(self):
-
-        print("Waiting for wake word...")
+        print(
+            "Waiting for wake word..."
+        )
 
         while True:
 
@@ -41,43 +47,6 @@ class WakeWord:
 
             if frame is None:
                 continue
-
-            # ------------------------------------------------
-            # Temporary audio diagnostics.
-            # Prints once every 2 seconds.
-            # ------------------------------------------------
-
-            now = time.monotonic()
-
-            if now - self._debug_last >= 2.0:
-
-                self._debug_last = now
-
-                rms = float(
-                    np.sqrt(
-                        np.mean(
-                            frame.astype(
-                                np.float32
-                            ) ** 2
-                        )
-                    )
-                )
-
-                peak = int(
-                    np.max(
-                        np.abs(frame)
-                    )
-                )
-
-                print(
-                    f"Wake audio: "
-                    f"RMS={rms:.1f} "
-                    f"peak={peak}"
-                )
-
-            # ------------------------------------------------
-            # Wake-word inference
-            # ------------------------------------------------
 
             prediction = self.model.predict(
                 frame
@@ -95,8 +64,7 @@ class WakeWord:
                 self.triggered = True
 
                 print(
-                    f"Wake word detected! "
-                    f"score={score:.3f}"
+                    "Wake word detected!"
                 )
 
                 return
