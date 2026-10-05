@@ -82,9 +82,13 @@
                 stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         channelCount: 1,
-                        echoCancellation: false,
-                        noiseSuppression: false,
-                        autoGainControl: false
+                        sampleRate: 16000,
+                        sampleSize: 16,
+
+                        // Let the browser clean and level the microphone.
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
                     }
                 });
 
