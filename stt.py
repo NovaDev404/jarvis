@@ -1,5 +1,5 @@
-import time
 import re
+import time
 
 import numpy as np
 from faster_whisper import WhisperModel
@@ -34,43 +34,36 @@ vad = VAD(
 
 RATE = 16000
 
-# audio_queue gives us 1280 samples = 80 ms
-CHUNK = 1280
+# Audio queue frames are 80 ms.
+AUDIO_FRAME = 1280
 
-# Silero VAD processes 30 ms frames.
-VAD_CHUNK = 480
+# Silero VAD uses 30 ms frames at 16 kHz.
+VAD_FRAME = 480
 
 
 # ============================================================
-# Speech detection tuning
+# VAD tuning
 # ============================================================
 
-# VAD probability required to consider audio speech.
+# Speech start threshold.
 VAD_THRESHOLD = 0.50
 
-# Once speech has started, this lower threshold prevents
-# tiny dips in VAD confidence from chopping the sentence.
+# Lower threshold while already speaking.
+# Prevents small fluctuations from cutting speech.
 VAD_SILENCE_THRESHOLD = 0.35
 
-# Require 2 consecutive VAD frames (~60 ms) before
-# declaring that the user has started speaking.
+# 2 × 30 ms = ~60 ms of confirmed speech.
 START_FRAMES = 2
 
-# End the utterance after this much continuous silence.
-#
-# 650 ms = 0.65 seconds.
-END_SILENCE = 0.65
+# End after ~650 ms of continuous non-speech.
+END_SILENCE_SECONDS = 0.65
 
-# Audio immediately before speech starts.
-#
-# This is important because wake-word detection and the
-# transition into STT can otherwise eat the beginning of
-# "what's the weather..."
-PRE_ROLL = 0.8
+# Keep recent audio so the start of speech isn't chopped.
+PRE_ROLL_SECONDS = 0.80
 
 
 # ============================================================
-# Safety limits
+# Limits
 # ============================================================
 
 NO_SPEECH_TIMEOUT = 5.0
@@ -80,12 +73,8 @@ MAX_DURATION = 15.0
 paused = False
 
 
-# ============================================================
-# Lifecycle
-# ============================================================
-
 def start():
-    print("STT ready (distil-small.en + Silero VAD).")
+    print("STT ready.")
 
 
 def stop():
@@ -103,23 +92,19 @@ def resume():
 
 
 def flush():
-    """
-    Throw away audio after TTS.
-
-    This prevents Jarvis from transcribing its own response.
-    """
     audio_queue.clear()
 
 
-# ============================================================
-# Text cleanup
-# ============================================================
+def _clean_text(text):
+    """
+    Remove extra whitespace and an accidentally transcribed
+    wake word from the beginning.
+    """
 
-def clean_text(text):
-    text = " ".join(text.split())
+    text = " ".join(
+        text.split()
+    )
 
-    # The pre-roll may contain the wake word.
-    # Remove it if Whisper picked it up.
     text = re.sub(
         r"^(?:hey\s+)?jarvis[\s,.:;!?-]*",
         "",
@@ -130,28 +115,19 @@ def clean_text(text):
     return text.strip()
 
 
-# ============================================================
-# Listen
-# ============================================================
-
 def listen():
-
     print("Listening...")
 
     # --------------------------------------------------------
-    # Important:
+    # Remove stale frames that accumulated while waiting
+    # for the wake word.
     #
-    # WakeWord consumes wake_queue, NOT stt_queue.
-    #
-    # The STT queue has therefore been collecting audio while
-    # we were waiting for "Hey Jarvis".
-    #
-    # Discard that stale queue, but KEEP the rolling history.
+    # The rolling history remains available for pre-roll.
     # --------------------------------------------------------
 
     audio_queue.prepare_stt()
 
-    # Reset Silero's internal state.
+    # Reset the VAD's recurrent state.
     vad.reset_states()
 
     vad_buffer = np.empty(
@@ -165,53 +141,54 @@ def listen():
 
     speech_start_count = 0
 
-    silent_samples = 0
+    silence_samples = 0
 
-    start_time = time.monotonic()
-
-    # --------------------------------------------------------
-    # Main audio loop
-    # --------------------------------------------------------
+    listen_started_at = time.monotonic()
 
     while True:
 
         if paused:
-
             audio_queue.get_stt_chunk(
                 timeout=0.1
             )
-
             continue
 
-        audio = audio_queue.get_stt_chunk(
+        frame = audio_queue.get_stt_chunk(
             timeout=0.1
         )
 
-        if audio is None:
+        if frame is None:
             continue
 
-        # Add 80 ms to VAD buffer.
+        was_started = speech_started
+
+        # Add this 80 ms frame to the VAD buffer.
         vad_buffer = np.concatenate(
             (
                 vad_buffer,
-                audio
+                frame
             )
         )
+
+        ended = False
 
         # ----------------------------------------------------
         # Process exact 30 ms VAD frames.
         # ----------------------------------------------------
 
-        while len(vad_buffer) >= VAD_CHUNK:
+        while len(vad_buffer) >= VAD_FRAME:
 
-            vad_audio = vad_buffer[:VAD_CHUNK]
+            vad_frame = vad_buffer[
+                :VAD_FRAME
+            ]
 
-            vad_buffer = vad_buffer[VAD_CHUNK:]
+            vad_buffer = vad_buffer[
+                VAD_FRAME:
+            ]
 
-            # Silero VAD score.
             score = vad.predict(
-                vad_audio,
-                frame_size=VAD_CHUNK
+                vad_frame,
+                frame_size=VAD_FRAME
             )
 
             # =================================================
@@ -228,103 +205,83 @@ def listen():
 
                     speech_start_count = 0
 
-                # ~60 ms of confirmed speech.
                 if speech_start_count >= START_FRAMES:
 
                     speech_started = True
 
-                    print(
-                        f"STT: speech started "
-                        f"(VAD={score:.3f})"
+                    # Restore the previous ~800 ms.
+                    pre_roll = audio_queue.get_history(
+                        PRE_ROLL_SECONDS
                     )
 
-                    # ------------------------------------------------
-                    # IMPORTANT:
-                    #
-                    # Grab audio immediately before speech started.
-                    # This prevents the first syllable from disappearing.
-                    # ------------------------------------------------
-
-                    history = audio_queue.get_history(
-                        PRE_ROLL
-                    )
-
-                    if len(history):
+                    if len(pre_roll):
 
                         frames.append(
-                            history.astype(
+                            pre_roll.astype(
                                 np.float32
                             ) / 32768.0
                         )
 
-                    silent_samples = 0
+                    silence_samples = 0
 
             # =================================================
-            # Already speaking
+            # Speech already started
             # =================================================
 
             else:
 
                 if score < VAD_SILENCE_THRESHOLD:
 
-                    silent_samples += VAD_CHUNK
+                    silence_samples += VAD_FRAME
 
                 else:
 
-                    silent_samples = 0
-
-                # ------------------------------------------------
-                # End of speech.
-                # ------------------------------------------------
+                    silence_samples = 0
 
                 if (
-                    silent_samples
-                    >= END_SILENCE * RATE
+                    silence_samples
+                    >= END_SILENCE_SECONDS * RATE
                 ):
 
-                    print(
-                        f"STT: speech ended "
-                        f"after "
-                        f"{silent_samples / RATE:.2f}s silence"
-                    )
-
+                    ended = True
                     break
 
         # ----------------------------------------------------
-        # Once speech has started, store this entire 80 ms
-        # audio frame.
+        # Append the complete audio frame once speech is active.
+        #
+        # Do not append the frame that contains the transition
+        # into speech because the pre-roll already contains it.
         # ----------------------------------------------------
 
-        if speech_started:
+        if speech_started and was_started:
 
             frames.append(
-                audio.astype(
+                frame.astype(
                     np.float32
                 ) / 32768.0
             )
 
-        # ----------------------------------------------------
-        # Don't wait forever for someone to speak.
-        # ----------------------------------------------------
+        if ended:
+            break
 
         elapsed = (
             time.monotonic()
-            - start_time
+            - listen_started_at
         )
+
+        # ----------------------------------------------------
+        # No speech detected.
+        # ----------------------------------------------------
 
         if (
             not speech_started
             and elapsed >= NO_SPEECH_TIMEOUT
         ):
 
-            print(
-                "STT: no speech detected."
-            )
-
             return ""
 
         # ----------------------------------------------------
-        # Maximum utterance length.
+        # Prevent an infinite recording.
         # ----------------------------------------------------
 
         if (
@@ -332,35 +289,13 @@ def listen():
             and elapsed >= MAX_DURATION
         ):
 
-            print(
-                "STT: maximum utterance duration reached."
-            )
-
-            break
-
-        # ----------------------------------------------------
-        # The VAD loop can have detected the end.
-        # Check it here.
-        # ----------------------------------------------------
-
-        if (
-            speech_started
-            and silent_samples
-            >= END_SILENCE * RATE
-        ):
-
             break
 
     # ========================================================
-    # Nothing recorded
+    # No usable audio
     # ========================================================
 
     if not frames:
-
-        print(
-            "STT: no audio captured."
-        )
-
         return ""
 
     audio_data = np.concatenate(
@@ -372,18 +307,7 @@ def listen():
         / RATE
     )
 
-    print(
-        f"STT: transcribing "
-        f"{duration:.2f}s..."
-    )
-
-    # Don't send microscopic clips to Whisper.
     if duration < 0.25:
-
-        print(
-            "STT: utterance too short."
-        )
-
         return ""
 
     # ========================================================
@@ -391,23 +315,21 @@ def listen():
     # ========================================================
 
     segments, info = model.transcribe(
-
         audio_data,
 
         language="en",
 
-        # Faster than your current beam_size=5.
+        # Faster CPU decoding.
         beam_size=1,
 
         best_of=1,
 
         temperature=0.0,
 
-        # Every command is a fresh utterance.
-        # Prevents previous speech from influencing this one.
+        # Each command is independent.
         condition_on_previous_text=False,
 
-        # VAD has already been done above.
+        # VAD was already performed above.
         vad_filter=False,
 
         without_timestamps=True
@@ -419,10 +341,4 @@ def listen():
         if segment.text.strip()
     )
 
-    text = clean_text(text)
-
-    print(
-        f"STT result: {text!r}"
-    )
-
-    return text
+    return _clean_text(text)
