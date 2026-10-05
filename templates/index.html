@@ -1,7 +1,10 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-    <title>Audio Stream Test</title>
+    <meta charset="UTF-8">
+    <title>Jarvis Voice Assistant</title>
+
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -29,152 +32,535 @@
             margin-top: 20px;
             font-size: 18px;
         }
+
+        #debug {
+            margin-top: 20px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            font-size: 13px;
+        }
     </style>
 </head>
 
 <body>
-    <h1>Jarvis Voice Assistant</h1>
 
-    <button id="startBtn" onclick="startRecording()">
-        Start Listening
-    </button>
+<h1>Jarvis Voice Assistant</h1>
 
-    <div id="status">Ready</div>
+<button id="startBtn" onclick="startRecording()">
+    Start Listening
+</button>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<div id="status">
+    Ready
+</div>
 
-    <script>
-        let socket;
-        let audioContext;
-        let processor;
-        let source;
-        let stream;
+<div id="debug"></div>
 
-        function convertFloat32ToInt16(float32Array) {
-            const int16Array = new Int16Array(float32Array.length);
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
 
-            for (let i = 0; i < float32Array.length; i++) {
-                let s = Math.max(-1, Math.min(1, float32Array[i]));
+<script>
 
-                int16Array[i] =
-                    s < 0
-                        ? s * 0x8000
-                        : s * 0x7FFF;
-            }
+let socket = null;
+let audioContext = null;
+let stream = null;
+let source = null;
+let workletNode = null;
+let muteGain = null;
 
-            return int16Array;
+const status =
+    document.getElementById("status");
+
+const debug =
+    document.getElementById("debug");
+
+const startBtn =
+    document.getElementById("startBtn");
+
+
+function setStatus(text) {
+
+    status.textContent = text;
+
+}
+
+
+function debugLog(text) {
+
+    console.log(text);
+
+    debug.textContent += text + "\n";
+
+}
+
+
+/*
+ * AudioWorklet processor.
+ *
+ * Converts Float32 microphone samples into
+ * signed 16-bit PCM and sends them to the
+ * main page.
+ */
+const workletCode = `
+
+class MicProcessor extends AudioWorkletProcessor {
+
+    process(inputs) {
+
+        const input = inputs[0];
+
+        if (
+            !input ||
+            !input[0]
+        ) {
+            return true;
         }
 
-        async function startRecording() {
-            const btn = document.getElementById("startBtn");
-            const status = document.getElementById("status");
+        const samples = input[0];
 
-            btn.disabled = true;
-            status.textContent = "Requesting microphone permission...";
+        const pcm =
+            new Int16Array(
+                samples.length
+            );
 
-            try {
-                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                    throw new Error(
-                        "Microphone access not supported. Use HTTPS or localhost."
-                    );
-                }
+        let sum = 0;
+        let peak = 0;
 
-                stream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        channelCount: 1,
-                        sampleRate: 16000,
-                        sampleSize: 16,
+        for (
+            let i = 0;
+            i < samples.length;
+            i++
+        ) {
 
-                        // Let the browser clean and level the microphone.
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true
-                    }
-                });
-
-                status.textContent = "Connecting...";
-
-                socket = io();
-
-                socket.on("connect", async () => {
-                    status.textContent = "Listening...";
-
-                    audioContext = new (
-                        window.AudioContext ||
-                        window.webkitAudioContext
-                    )();
-
-                    if (audioContext.state === "suspended") {
-                        await audioContext.resume();
-                    }
-
-                    source = audioContext.createMediaStreamSource(stream);
-                    processor = audioContext.createScriptProcessor(
-                        2048,
+            let sample =
+                Math.max(
+                    -1,
+                    Math.min(
                         1,
-                        1
-                    );
-
-                    socket.emit(
-                        "sample_rate",
-                        audioContext.sampleRate
-                    );
-
-                    processor.onaudioprocess = (event) => {
-                        const input = event.inputBuffer.getChannelData(0);
-                        const int16 = convertFloat32ToInt16(input);
-                        socket.emit(
-                            "audio_data",
-                            int16.buffer
-                        );
-                    };
-
-                    source.connect(processor);
-                    processor.connect(audioContext.destination);
-                });
-
-                socket.on("connect_error", (error) => {
-                    status.textContent = "Socket.IO error";
-                    btn.disabled = false;
-                    stopRecording();
-                });
-
-            } catch (error) {
-                status.textContent =
-                    "Error: " + error.message;
-                btn.disabled = false;
-            }
-        }
-
-        function stopRecording() {
-            if (processor) {
-                processor.disconnect();
-                processor = null;
-            }
-
-            if (source) {
-                source.disconnect();
-                source = null;
-            }
-
-            if (audioContext) {
-                audioContext.close();
-                audioContext = null;
-            }
-
-            if (stream) {
-                stream.getTracks().forEach(
-                    track => track.stop()
+                        samples[i]
+                    )
                 );
 
-                stream = null;
+            sum += sample * sample;
+
+            const absolute =
+                Math.abs(sample);
+
+            if (absolute > peak) {
+                peak = absolute;
             }
 
-            if (socket) {
-                socket.disconnect();
-                socket = null;
-            }
+            pcm[i] =
+                sample < 0
+                    ? sample * 0x8000
+                    : sample * 0x7FFF;
         }
-    </script>
+
+        const rms =
+            Math.sqrt(
+                sum / samples.length
+            );
+
+        /*
+         * Send PCM + diagnostics.
+         */
+        this.port.postMessage({
+            pcm: pcm.buffer,
+            rms: rms,
+            peak: peak
+        }, [pcm.buffer]);
+
+        return true;
+    }
+}
+
+registerProcessor(
+    "jarvis-mic-processor",
+    MicProcessor
+);
+
+`;
+
+
+async function startRecording() {
+
+    startBtn.disabled = true;
+
+    debug.textContent = "";
+
+    setStatus(
+        "Requesting microphone..."
+    );
+
+    try {
+
+        /*
+         * ----------------------------------------------------
+         * Microphone
+         * ----------------------------------------------------
+         */
+
+        stream =
+            await navigator.mediaDevices.getUserMedia({
+
+                audio: {
+
+                    channelCount: {
+                        ideal: 1
+                    },
+
+                    sampleRate: {
+                        ideal: 16000
+                    },
+
+                    sampleSize: {
+                        ideal: 16
+                    },
+
+                    echoCancellation: true,
+
+                    noiseSuppression: true,
+
+                    autoGainControl: true
+                }
+            });
+
+
+        const track =
+            stream.getAudioTracks()[0];
+
+
+        if (!track) {
+
+            throw new Error(
+                "No microphone audio track."
+            );
+        }
+
+
+        const settings =
+            track.getSettings();
+
+
+        debugLog(
+            "Mic device: " +
+            (track.label || "unknown")
+        );
+
+        debugLog(
+            "Mic state: " +
+            track.readyState
+        );
+
+        debugLog(
+            "Mic enabled: " +
+            track.enabled
+        );
+
+        debugLog(
+            "Mic muted: " +
+            track.muted
+        );
+
+        debugLog(
+            "Mic sample rate: " +
+            (settings.sampleRate || "unknown")
+        );
+
+        debugLog(
+            "Mic channels: " +
+            (settings.channelCount || "unknown")
+        );
+
+
+        /*
+         * ----------------------------------------------------
+         * Socket.IO
+         * ----------------------------------------------------
+         */
+
+        socket = io();
+
+
+        socket.on(
+            "connect",
+            async () => {
+
+                setStatus(
+                    "Starting audio..."
+                );
+
+
+                /*
+                 * Prefer 16 kHz.
+                 */
+                audioContext =
+                    new AudioContext({
+                        sampleRate: 16000
+                    });
+
+
+                if (
+                    audioContext.state ===
+                    "suspended"
+                ) {
+
+                    await audioContext.resume();
+                }
+
+
+                debugLog(
+                    "AudioContext state: " +
+                    audioContext.state
+                );
+
+                debugLog(
+                    "AudioContext rate: " +
+                    audioContext.sampleRate
+                );
+
+
+                /*
+                 * Tell Python the real output
+                 * sample rate.
+                 */
+                socket.emit(
+                    "sample_rate",
+                    audioContext.sampleRate
+                );
+
+
+                /*
+                 * Create the AudioWorklet.
+                 */
+                const blob =
+                    new Blob(
+                        [workletCode],
+                        {
+                            type:
+                                "application/javascript"
+                        }
+                    );
+
+
+                const workletUrl =
+                    URL.createObjectURL(blob);
+
+
+                await audioContext.audioWorklet.addModule(
+                    workletUrl
+                );
+
+
+                URL.revokeObjectURL(
+                    workletUrl
+                );
+
+
+                /*
+                 * Microphone source.
+                 */
+                source =
+                    audioContext.createMediaStreamSource(
+                        stream
+                    );
+
+
+                /*
+                 * AudioWorklet.
+                 */
+                workletNode =
+                    new AudioWorkletNode(
+                        audioContext,
+                        "jarvis-mic-processor",
+                        {
+                            numberOfInputs: 1,
+                            numberOfOutputs: 1,
+                            channelCount: 1,
+                            channelCountMode: "explicit",
+                            channelInterpretation: "speakers"
+                        }
+                    );
+
+
+                let lastDebug =
+                    performance.now();
+
+
+                workletNode.port.onmessage =
+                    (event) => {
+
+                        const data =
+                            event.data;
+
+
+                        /*
+                         * Send raw PCM to Python.
+                         */
+                        socket.emit(
+                            "audio_data",
+                            data.pcm
+                        );
+
+
+                        /*
+                         * Debug microphone level.
+                         */
+                        const now =
+                            performance.now();
+
+
+                        if (
+                            now - lastDebug >= 1000
+                        ) {
+
+                            lastDebug = now;
+
+                            debugLog(
+                                "Mic RMS: " +
+                                data.rms.toFixed(4) +
+                                " peak: " +
+                                data.peak.toFixed(4)
+                            );
+                        }
+                    };
+
+
+                /*
+                 * Zero-output gain node.
+                 *
+                 * The worklet MUST remain in the audio
+                 * graph, but we do not want to play the
+                 * microphone through the speakers.
+                 */
+                muteGain =
+                    audioContext.createGain();
+
+                muteGain.gain.value = 0;
+
+
+                source.connect(
+                    workletNode
+                );
+
+                workletNode.connect(
+                    muteGain
+                );
+
+                muteGain.connect(
+                    audioContext.destination
+                );
+
+
+                /*
+                 * Make sure the track is actually enabled.
+                 */
+                track.enabled = true;
+
+
+                setStatus(
+                    "Listening..."
+                );
+
+            }
+        );
+
+
+        socket.on(
+            "connect_error",
+            (error) => {
+
+                console.error(
+                    error
+                );
+
+                setStatus(
+                    "Socket error: " +
+                    error.message
+                );
+
+                stopRecording();
+
+                startBtn.disabled = false;
+            }
+        );
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        setStatus(
+            "Microphone error: " +
+            error.message
+        );
+
+        debugLog(
+            "ERROR: " +
+            error.message
+        );
+
+        stopRecording();
+
+        startBtn.disabled = false;
+    }
+}
+
+
+function stopRecording() {
+
+    if (workletNode) {
+
+        workletNode.disconnect();
+
+        workletNode = null;
+    }
+
+
+    if (muteGain) {
+
+        muteGain.disconnect();
+
+        muteGain = null;
+    }
+
+
+    if (source) {
+
+        source.disconnect();
+
+        source = null;
+    }
+
+
+    if (audioContext) {
+
+        audioContext.close();
+
+        audioContext = null;
+    }
+
+
+    if (stream) {
+
+        stream
+            .getTracks()
+            .forEach(
+                track => track.stop()
+            );
+
+        stream = null;
+    }
+
+
+    if (socket) {
+
+        socket.disconnect();
+
+        socket = null;
+    }
+}
+
+</script>
+
 </body>
 </html>
