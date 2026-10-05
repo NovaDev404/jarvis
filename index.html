@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Jarvis Voice Assistant</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        #status {
+            margin-top: 20px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Jarvis Voice Assistant</h1>
+
+    <button id="startBtn" onclick="startRecording()">
+        Start Listening
+    </button>
+
+    <div id="status">Ready</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+
+    <script>
+        let socket;
+        let audioContext;
+        let processor;
+        let source;
+        let stream;
+        let muteGain;
+        let ttsPlaying = false;
+        let ttsSource = null;
+
+        function convertFloat32ToInt16(float32Array) {
+            const int16Array = new Int16Array(float32Array.length);
+
+            for (let i = 0; i < float32Array.length; i++) {
+                let s = Math.max(-1, Math.min(1, float32Array[i]));
+
+                int16Array[i] = s < 0
+                    ? s * 0x8000
+                    : s * 0x7FFF;
+            }
+
+            return int16Array;
+        }
+
+        function getArrayBuffer(data) {
+            if (data instanceof ArrayBuffer) {
+                return data;
+            }
+
+            if (ArrayBuffer.isView(data)) {
+                return data.buffer.slice(
+                    data.byteOffset,
+                    data.byteOffset + data.byteLength
+                );
+            }
+
+            return new Uint8Array(data).buffer;
+        }
+
+        async function playTTS(data) {
+            if (!audioContext) {
+                return;
+            }
+
+            ttsPlaying = true;
+            document.getElementById("status").textContent = "Speaking...";
+
+            try {
+                if (audioContext.state === "suspended") {
+                    await audioContext.resume();
+                }
+
+                const buffer = await audioContext.decodeAudioData(
+                    getArrayBuffer(data)
+                );
+
+                if (ttsSource) {
+                    try {
+                        ttsSource.stop();
+                    } catch (_) {
+                    }
+                    ttsSource.disconnect();
+                }
+
+                ttsSource = audioContext.createBufferSource();
+                ttsSource.buffer = buffer;
+                ttsSource.connect(audioContext.destination);
+
+                ttsSource.onended = () => {
+                    if (ttsSource) {
+                        ttsSource.disconnect();
+                    }
+
+                    ttsSource = null;
+                    ttsPlaying = false;
+                    document.getElementById("status").textContent = "Listening...";
+                };
+
+                ttsSource.start(0);
+            } catch (error) {
+                ttsPlaying = false;
+                document.getElementById("status").textContent = "Listening...";
+            }
+        }
+
+        async function startRecording() {
+            const btn = document.getElementById("startBtn");
+            const status = document.getElementById("status");
+
+            btn.disabled = true;
+            status.textContent = "Requesting microphone permission...";
+
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error(
+                        "Microphone access not supported. Use HTTPS or localhost."
+                    );
+                }
+
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        channelCount: 1,
+                        sampleRate: 16000,
+                        sampleSize: 16,
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }
+                });
+
+                status.textContent = "Connecting...";
+                socket = io();
+
+                socket.on("connect", async () => {
+                    status.textContent = "Listening...";
+
+                    try {
+                        audioContext = new AudioContext({
+                            sampleRate: 16000
+                        });
+                    } catch (_) {
+                        audioContext = new AudioContext();
+                    }
+
+                    if (audioContext.state === "suspended") {
+                        await audioContext.resume();
+                    }
+
+                    source = audioContext.createMediaStreamSource(stream);
+                    processor = audioContext.createScriptProcessor(2048, 1, 1);
+
+                    socket.emit("sample_rate", audioContext.sampleRate);
+
+                    processor.onaudioprocess = (event) => {
+                        // Do not send microphone audio while Jarvis is speaking.
+                        // This prevents TTS audio from feeding back into STT/wake-word detection.
+                        if (ttsPlaying) {
+                            return;
+                        }
+
+                        const input = event.inputBuffer.getChannelData(0);
+                        const int16 = convertFloat32ToInt16(input);
+                        socket.emit("audio_data", int16.buffer);
+                    };
+
+                    muteGain = audioContext.createGain();
+                    muteGain.gain.value = 0;
+
+                    source.connect(processor);
+                    processor.connect(muteGain);
+                    muteGain.connect(audioContext.destination);
+                });
+
+                socket.on("tts_audio", (data) => {
+                    playTTS(data);
+                });
+
+                socket.on("connect_error", () => {
+                    status.textContent = "Socket.IO error";
+                    btn.disabled = false;
+                    stopRecording();
+                });
+            } catch (error) {
+                status.textContent = "Error: " + error.message;
+                btn.disabled = false;
+            }
+        }
+
+        function stopRecording() {
+            ttsPlaying = false;
+
+            if (ttsSource) {
+                try {
+                    ttsSource.stop();
+                } catch (_) {
+                }
+
+                ttsSource.disconnect();
+                ttsSource = null;
+            }
+
+            if (processor) {
+                processor.disconnect();
+                processor = null;
+            }
+
+            if (muteGain) {
+                muteGain.disconnect();
+                muteGain = null;
+            }
+
+            if (source) {
+                source.disconnect();
+                source = null;
+            }
+
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+        }
+    </script>
+</body>
+
+</html>

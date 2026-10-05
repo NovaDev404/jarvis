@@ -6,8 +6,8 @@ import tts
 import web_server
 
 
-# Start the WebSocket server in a background thread
-web_server.start_in_thread(host='0.0.0.0', port=5009)
+# Start the WebSocket server in a background thread.
+web_server.start_in_thread(host="0.0.0.0", port=5009)
 
 ww = wakeword.WakeWord()
 
@@ -17,8 +17,7 @@ stt.start()
 
 try:
     while True:
-
-        # Wait for "Hey Jarvis"
+        # Wait for "Hey Jarvis".
         ww.wait()
 
         # Microphone is already running, so there is no startup delay.
@@ -27,20 +26,19 @@ try:
         if text:
             print("You:", text)
 
-            # Stop collecting microphone audio while Jarvis speaks.
+            # Stop collecting microphone audio while Jarvis prepares TTS.
             stt.pause()
 
             try:
-                tts.speak(text)
-
+                audio_path = tts.speak(text)
+                if audio_path is not None:
+                    web_server.send_tts(audio_path)
             finally:
-                # Give the speaker a tiny moment to finish.
-                time.sleep(0.2)
-
-                # Throw away anything that was captured before/during TTS.
+                # Discard anything captured before/during TTS generation.
+                # The browser also stops sending microphone audio while the
+                # received TTS audio is actually playing.
+                time.sleep(0.05)
                 stt.flush()
-
-                # Ready for the next command.
                 stt.resume()
 
 finally:
