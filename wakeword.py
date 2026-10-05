@@ -58,7 +58,7 @@ class WakeWord:
 
             if (
                 not self.triggered
-                and score > 0.3
+                and score > 0.4
             ):
 
                 self.triggered = True

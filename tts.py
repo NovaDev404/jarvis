@@ -1,7 +1,8 @@
 from pathlib import Path
-import subprocess
 import tempfile
 import uuid
+import subprocess
+import time
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -9,29 +10,62 @@ MODEL_PATH = BASE_DIR / "tts" / "jarvis-medium.onnx"
 OUTPUT_DIR = Path(tempfile.gettempdir()) / "jarvis_tts"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+piper_process = None
+current_output_path = None
+
+
+def start():
+    """Start the piper subprocess so the model is loaded and ready for input."""
+    global piper_process, current_output_path
+    if piper_process is None:
+        current_output_path = OUTPUT_DIR / f"jarvis_{uuid.uuid4().hex}.wav"
+        print("Loading TTS model...")
+        piper_process = subprocess.Popen(
+            [
+                "piper",
+                "--model", str(MODEL_PATH),
+                "--output_file", str(current_output_path),
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        print("TTS model loaded.")
+
+
+def stop():
+    """Stop the piper subprocess."""
+    global piper_process, current_output_path
+    if piper_process is not None:
+        piper_process.terminate()
+        piper_process = None
+        current_output_path = None
+
 
 def speak(text):
-    """Generate TTS audio to a temporary WAV file and return its path."""
+    """Send text to the running piper process and wait for the WAV file."""
+    if piper_process is None:
+        raise RuntimeError("TTS model not loaded. Call start() first.")
+
     text = str(text or "").strip()
     if not text:
         return None
 
-    if not MODEL_PATH.is_file():
-        raise FileNotFoundError(f"Piper model not found: {MODEL_PATH}")
+    # Send text to piper
+    piper_process.stdin.write(text + "\n")
+    piper_process.stdin.flush()
 
-    output_path = OUTPUT_DIR / f"jarvis_{uuid.uuid4().hex}.wav"
+    # Wait for the WAV file to be created
+    while not current_output_path.exists():
+        time.sleep(0.01)
 
-    subprocess.run(
-        [
-            "piper",
-            "--model",
-            str(MODEL_PATH),
-            "--output_file",
-            str(output_path),
-        ],
-        input=text,
-        text=True,
-        check=True,
-    )
+    # Wait a bit to ensure the file is fully written
+    time.sleep(0.1)
+
+    output_path = current_output_path
+
+    # Stop the process
+    stop()
 
     return output_path
