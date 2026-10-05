@@ -46,6 +46,13 @@
       let workletNode = null;
       let muteGain = null;
       /*
+       * ------------------------------------------------
+       * TTS playback state
+       * ------------------------------------------------
+       */
+      let ttsPlaying = false;
+      let ttsSource = null;
+      /*
        * AudioWorklet processor.
        *
        * Receives microphone Float32 audio,
@@ -110,11 +117,125 @@
             );
 
         `;
+      /*
+       * ------------------------------------------------
+       * Convert incoming Socket.IO binary data
+       * into an ArrayBuffer.
+       * ------------------------------------------------
+       */
+      function getAudioArrayBuffer(data) {
+        if (data instanceof ArrayBuffer) {
+          return data;
+        }
+        if (ArrayBuffer.isView(data)) {
+          return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+        }
+        if (data instanceof Blob) {
+          return data.arrayBuffer();
+        }
+        return new Uint8Array(data).buffer;
+      }
+      /*
+       * ------------------------------------------------
+       * Play TTS audio received from the server.
+       *
+       * The server sends the generated WAV file as
+       * binary data using the "tts_audio" event.
+       * ------------------------------------------------
+       */
+      async function playTTS(data) {
+        if (!audioContext) {
+          return;
+        }
+        ttsPlaying = true;
+        const status = document.getElementById("status");
+        status.textContent = " Speaking... ";
+        try {
+          /*
+           * Make sure the AudioContext is running.
+           */
+          if (audioContext.state === "suspended") {
+            await audioContext.resume();
+          }
+          /*
+           * Convert the incoming binary data
+           * into an ArrayBuffer.
+           */
+          const audioData = await getAudioArrayBuffer(data);
+          /*
+           * Decode the WAV file.
+           */
+          const audioBuffer = await audioContext.decodeAudioData(audioData);
+          /*
+           * Stop any previous TTS playback.
+           */
+          if (ttsSource) {
+            try {
+              ttsSource.stop();
+            } catch (_) {
+              // Already stopped.
+            }
+            try {
+              ttsSource.disconnect();
+            } catch (_) {
+              // Already disconnected.
+            }
+            ttsSource = null;
+          }
+          /*
+           * Create a new source for this response.
+           */
+          ttsSource = audioContext.createBufferSource();
+          ttsSource.buffer = audioBuffer;
+          /*
+           * IMPORTANT:
+           *
+           * TTS goes directly to the speakers.
+           *
+           * Microphone audio still goes through
+           * the zero-gain node below, so microphone
+           * monitoring remains muted.
+           */
+          ttsSource.connect(audioContext.destination);
+          /*
+           * When playback finishes, allow
+           * microphone transmission again.
+           */
+          ttsSource.onended = () => {
+            if (ttsSource) {
+              try {
+                ttsSource.disconnect();
+              } catch (_) {
+                // Already disconnected.
+              }
+            }
+            ttsSource = null;
+            ttsPlaying = false;
+            /*
+             * Only return to Listening if the
+             * socket is still connected.
+             */
+            if (socket && socket.connected) {
+              status.textContent = " Listening... ";
+            }
+          };
+          /*
+           * Start playing immediately.
+           */
+          ttsSource.start(0);
+        } catch (error) {
+          console.error("TTS playback error:", error);
+          ttsPlaying = false;
+          if (socket && socket.connected) {
+            status.textContent = " Listening... ";
+          }
+        }
+      }
       async function startRecording() {
         const startBtn = document.getElementById("startBtn");
         const status = document.getElementById("status");
         startBtn.disabled = true;
-        status.textContent = "Requesting microphone...";
+        status.textContent = " Requesting microphone... ";
         try {
           /*
            * ------------------------------------------------
@@ -147,8 +268,28 @@
            * ------------------------------------------------
            */
           socket = io();
+          /*
+           * ------------------------------------------------
+           * Receive TTS audio from server.
+           * ------------------------------------------------
+           *
+           * web_server.py sends:
+           *
+           * socketio.emit(
+           *     "tts_audio",
+           *     audio_bytes,
+           *     to=sid
+           * )
+           *
+           * The browser receives the WAV here
+           * and immediately plays it.
+           */
+          socket.on("tts_audio",
+            (data) => {
+              playTTS(data);
+            });
           socket.on("connect", async () => {
-            status.textContent = "Starting audio...";
+            status.textContent = " Starting audio... ";
             /*
              * Request a 16 kHz audio context.
              */
@@ -198,6 +339,17 @@
              * from the worklet.
              */
             workletNode.port.onmessage = (event) => {
+              /*
+               * DO NOT send microphone
+               * audio while Jarvis is speaking.
+               *
+               * This prevents the TTS audio from
+               * being picked up and sent back into
+               * STT / wake-word detection.
+               */
+              if (ttsPlaying) {
+                return;
+              }
               if (!socket || !socket.connected) {
                 return;
               }
@@ -235,22 +387,22 @@
              * is enabled.
              */
             track.enabled = true;
-            status.textContent = "Listening...";
+            status.textContent = " Listening... ";
           });
           socket.on("connect_error",
             (error) => {
               console.error("Socket.IO connection error:", error);
-              status.textContent = "Connection error.";
+              status.textContent = " Connection error. ";
               stopRecording();
               startBtn.disabled = false;
             });
           socket.on("disconnect",
             () => {
-              status.textContent = "Disconnected.";
+              status.textContent = " Disconnected. ";
             });
         } catch (error) {
           console.error("Microphone error:", error);
-          status.textContent = "Microphone error: " + error.message;
+          status.textContent = " Microphone error: " + error.message;
           stopRecording();
           startBtn.disabled = false;
         }
@@ -258,31 +410,64 @@
 
       function stopRecording() {
         /*
+         * Stop TTS playback.
+         */
+        ttsPlaying = false;
+        if (ttsSource) {
+          try {
+            ttsSource.stop();
+          } catch (_) {
+            // Already stopped.
+          }
+          try {
+            ttsSource.disconnect();
+          } catch (_) {
+            // Already disconnected.
+          }
+          ttsSource = null;
+        }
+        /*
          * AudioWorklet
          */
         if (workletNode) {
-          workletNode.disconnect();
+          try {
+            workletNode.disconnect();
+          } catch (_) {
+            // Already disconnected.
+          }
           workletNode = null;
         }
         /*
          * Zero-gain node
          */
         if (muteGain) {
-          muteGain.disconnect();
+          try {
+            muteGain.disconnect();
+          } catch (_) {
+            // Already disconnected.
+          }
           muteGain = null;
         }
         /*
          * Microphone source
          */
         if (source) {
-          source.disconnect();
+          try {
+            source.disconnect();
+          } catch (_) {
+            // Already disconnected.
+          }
           source = null;
         }
         /*
          * AudioContext
          */
         if (audioContext) {
-          audioContext.close();
+          try {
+            audioContext.close();
+          } catch (_) {
+            // Already closed.
+          }
           audioContext = null;
         }
         /*
