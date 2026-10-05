@@ -1,5 +1,4 @@
 import time
-import os
 import wakeword
 import stt
 import ai
@@ -28,9 +27,6 @@ try:
                 audio_path = tts.speak(response)
                 if audio_path is not None:
                     web_server.send_tts(audio_path)
-                    # Clean up the WAV file after sending
-                    if os.path.exists(audio_path):
-                        os.remove(audio_path)
             finally:
                 time.sleep(0.05)
                 stt.flush()

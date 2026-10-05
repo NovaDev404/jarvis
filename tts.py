@@ -56,12 +56,11 @@ def speak(text):
     piper_process.stdin.write(text + "\n")
     piper_process.stdin.flush()
 
-    # Wait for the WAV file to be created
-    while not current_output_path.exists():
-        time.sleep(0.01)
+    # Close stdin to signal piper to process
+    piper_process.stdin.close()
 
-    # Wait a bit to ensure the file is fully written
-    time.sleep(0.1)
+    # Wait for piper to finish generating the audio
+    piper_process.wait()
 
     output_path = current_output_path
 
