@@ -12,7 +12,6 @@ args = parser.parse_args()
 
 web_server.start_in_thread(host="0.0.0.0", port=5009, use_https=args.https)
 ww = wakeword.WakeWord()
-stt.start()
 
 # Conversation listening timeout (seconds)
 CONVERSATION_TIMEOUT = 5.0
@@ -36,7 +35,9 @@ try:
 
             if text:
                 print("You:", text)
-                stt.pause()
+
+                # Start TTS before AI prompt (needed for tool confirmations)
+                tts.start()
 
                 # Get AI response with conversation history
                 response = ai.prompt(text, conversation_history)
@@ -45,9 +46,6 @@ try:
                 # Add to conversation history
                 conversation_history.append({"role": "user", "content": text})
                 conversation_history.append({"role": "assistant", "content": response})
-
-                # Start TTS for this turn
-                tts.start()
 
                 try:
                     audio_path = tts.speak(response)
@@ -59,7 +57,6 @@ try:
                     tts.stop()
                     time.sleep(0.05)
                     stt.flush()
-                    stt.resume()
 
                 # Listen for follow-up with 5-second timeout
                 print("Listening for follow-up...")
@@ -67,7 +64,7 @@ try:
                 follow_up = stt.listen(no_speech_timeout=CONVERSATION_TIMEOUT)
                 print(f"Follow-up received: '{follow_up}'")
 
-                if follow_up:
+                if follow_up and follow_up.strip():
                     # Process follow-up in next iteration
                     text = follow_up
                 else:
@@ -84,5 +81,4 @@ try:
         web_server.send_conversation_end()
 
 finally:
-    stt.stop()
     tts.stop()

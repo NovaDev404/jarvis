@@ -661,12 +661,17 @@
             ttsPlaying = false;
             stopOrbAnimation();
             /*
-             * Notify server that TTS finished
+             * Delay to ensure audio has finished playing
+             * through the hardware buffer before notifying server.
+             * Longer responses need more time for the audio to
+             * fully clear the output buffer.
              */
-            if (socket && socket.connected) {
-              socket.emit("tts_finished");
-              status.textContent = " Listening... ";
-            }
+            setTimeout(() => {
+              if (socket && socket.connected) {
+                socket.emit("tts_finished");
+                status.textContent = " Listening... ";
+              }
+            }, 500);
           };
           /*
            * Start playing immediately.
@@ -677,8 +682,10 @@
           ttsPlaying = false;
           stopOrbAnimation();
           if (socket && socket.connected) {
-            socket.emit("tts_finished");
-            status.textContent = " Listening... ";
+            setTimeout(() => {
+              socket.emit("tts_finished");
+              status.textContent = " Listening... ";
+            }, 500);
           }
         }
       }

@@ -70,25 +70,12 @@ NO_SPEECH_TIMEOUT = 5.0
 MAX_DURATION = 15.0
 
 
-paused = False
-
-
 def start():
     print("STT ready.")
 
 
 def stop():
     print("STT stopped.")
-
-
-def pause():
-    global paused
-    paused = True
-
-
-def resume():
-    global paused
-    paused = False
 
 
 def flush():
@@ -149,13 +136,6 @@ def listen(no_speech_timeout=NO_SPEECH_TIMEOUT):
     listen_started_at = time.monotonic()
 
     while True:
-
-        if paused:
-            audio_queue.get_stt_chunk(
-                timeout=0.1
-            )
-            continue
-
         frame = audio_queue.get_stt_chunk(
             timeout=0.1
         )

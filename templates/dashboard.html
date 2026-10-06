@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>J.A.R.V.I.S. Dashboard</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: #000;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 250px;
+      background: linear-gradient(180deg, #0a0a1a 0%, #1a1a2e 100%);
+      border-right: 1px solid #0066ff;
+      display: flex;
+      flex-direction: column;
+      padding: 20px 0;
+    }
+
+    .sidebar-title {
+      text-align: center;
+      font-size: 24px;
+      font-weight: bold;
+      color: #00aaff;
+      margin-bottom: 30px;
+      letter-spacing: 2px;
+    }
+
+    .tab-button {
+      background: transparent;
+      border: none;
+      color: #888;
+      padding: 15px 25px;
+      text-align: left;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border-left: 3px solid transparent;
+    }
+
+    .tab-button:hover {
+      color: #00aaff;
+      background: rgba(0, 102, 255, 0.1);
+    }
+
+    .tab-button.active {
+      color: #00aaff;
+      background: rgba(0, 102, 255, 0.2);
+      border-left: 3px solid #00aaff;
+    }
+
+    /* Main content */
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .tab-content {
+      display: none;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .tab-content.active {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Talk tab - iframe */
+    #talk-iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    /* Chat tab */
+    .chat-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .chat-header {
+      padding: 20px;
+      border-bottom: 1px solid #0066ff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chat-header h2 {
+      color: #00aaff;
+    }
+
+    .clear-btn {
+      background: #ff4444;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.3s ease;
+    }
+
+    .clear-btn:hover {
+      background: #ff6666;
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    .message {
+      max-width: 70%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      line-height: 1.5;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      background: #0066ff;
+      color: white;
+    }
+
+    .message.assistant {
+      align-self: flex-start;
+      background: #1a1a2e;
+      border: 1px solid #0066ff;
+    }
+
+    .message.system {
+      align-self: center;
+      background: #333;
+      color: #888;
+      font-size: 12px;
+      padding: 8px 12px;
+    }
+
+    .chat-input-container {
+      padding: 20px;
+      border-top: 1px solid #0066ff;
+      display: flex;
+      gap: 10px;
+    }
+
+    .chat-input {
+      flex: 1;
+      background: #1a1a2e;
+      border: 1px solid #0066ff;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      resize: none;
+      outline: none;
+    }
+
+    .chat-input:focus {
+      border-color: #00aaff;
+    }
+
+    .send-btn {
+      background: #0066ff;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.3s ease;
+    }
+
+    .send-btn:hover {
+      background: #0088ff;
+    }
+
+    .send-btn:disabled {
+      background: #333;
+      cursor: not-allowed;
+    }
+
+    /* Memory Management tab */
+    .memory-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      overflow: hidden;
+    }
+
+    .memory-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .memory-header h2 {
+      color: #00aaff;
+    }
+
+    .memory-editor {
+      flex: 1;
+      background: #1a1a2e;
+      border: 1px solid #0066ff;
+      color: white;
+      padding: 16px;
+      border-radius: 8px;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      resize: none;
+      outline: none;
+      line-height: 1.6;
+    }
+
+    .memory-editor:focus {
+      border-color: #00aaff;
+    }
+
+    .memory-actions {
+      margin-top: 20px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .save-btn {
+      background: #0066ff;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.3s ease;
+    }
+
+    .save-btn:hover {
+      background: #0088ff;
+    }
+
+    .reload-btn {
+      background: #333;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.3s ease;
+    }
+
+    .reload-btn:hover {
+      background: #444;
+    }
+
+    .status-message {
+      margin-top: 10px;
+      font-size: 14px;
+    }
+
+    .status-message.success {
+      color: #00ff00;
+    }
+
+    .status-message.error {
+      color: #ff4444;
+    }
+
+    /* Confirmation Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal {
+      background: #1a1a2e;
+      border: 1px solid #0066ff;
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 0 30px rgba(0, 102, 255, 0.3);
+    }
+
+    .modal h3 {
+      color: #00aaff;
+      margin-bottom: 16px;
+    }
+
+    .modal p {
+      color: #ccc;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+
+    .modal-btn {
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      border: none;
+      transition: all 0.3s ease;
+    }
+
+    .modal-btn.confirm {
+      background: #0066ff;
+      color: white;
+    }
+
+    .modal-btn.confirm:hover {
+      background: #0088ff;
+    }
+
+    .modal-btn.cancel {
+      background: #333;
+      color: white;
+    }
+
+    .modal-btn.cancel:hover {
+      background: #444;
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <div class="sidebar-title">J.A.R.V.I.S.</div>
+    <button class="tab-button active" data-tab="talk">Talk</button>
+    <button class="tab-button" data-tab="chat">Chat</button>
+    <button class="tab-button" data-tab="memory">Memory Management</button>
+  </div>
+
+  <div class="main-content">
+    <!-- Talk Tab -->
+    <div id="talk" class="tab-content active">
+      <iframe id="talk-iframe" src="/"></iframe>
+    </div>
+
+    <!-- Chat Tab -->
+    <div id="chat" class="tab-content">
+      <div class="chat-container">
+        <div class="chat-header">
+          <h2>Chat</h2>
+          <button class="clear-btn" id="clearChat">Clear Conversation</button>
+        </div>
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="chat-input-container">
+          <textarea 
+            class="chat-input" 
+            id="chatInput" 
+            placeholder="Type your message..." 
+            rows="1"
+          ></textarea>
+          <button class="send-btn" id="sendBtn">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Memory Management Tab -->
+    <div id="memory" class="tab-content">
+      <div class="memory-container">
+        <div class="memory-header">
+          <h2>Memory Management</h2>
+        </div>
+        <textarea 
+          class="memory-editor" 
+          id="memoryEditor" 
+          placeholder="Permanent memory content..."
+        ></textarea>
+        <div class="memory-actions">
+          <button class="save-btn" id="saveMemory">Save Memory</button>
+          <button class="reload-btn" id="reloadMemory">Reload</button>
+        </div>
+        <div class="status-message" id="memoryStatus"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div class="modal-overlay" id="confirmationModal">
+    <div class="modal">
+      <h3>Confirmation Required</h3>
+      <p id="confirmationText">J.A.R.V.I.S. requests confirmation for an action.</p>
+      <div class="modal-actions">
+        <button class="modal-btn cancel" id="confirmCancel">Cancel</button>
+        <button class="modal-btn confirm" id="confirmApprove">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    // Tab switching
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        const tabId = button.dataset.tab;
+        
+        tabButtons.forEach(btn => btn.classList.remove('active'));
+        tabContents.forEach(content => content.classList.remove('active'));
+        
+        button.classList.add('active');
+        document.getElementById(tabId).classList.add('active');
+      });
+    });
+
+    // Chat functionality
+    let socket = null;
+    let conversationId = null;
+    const chatMessages = document.getElementById('chatMessages');
+    const chatInput = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const clearBtn = document.getElementById('clearChat');
+
+    // Confirmation modal
+    const confirmationModal = document.getElementById('confirmationModal');
+    const confirmationText = document.getElementById('confirmationText');
+    const confirmApprove = document.getElementById('confirmApprove');
+    const confirmCancel = document.getElementById('confirmCancel');
+    let currentRequestId = null;
+
+    function connectToChat() {
+      socket = io();
+      
+      socket.on('connect', () => {
+        socket.emit('text_connect');
+      });
+
+      socket.on('text_connected', (data) => {
+        conversationId = data.conversation_id;
+        addSystemMessage('Connected to J.A.R.V.I.S.');
+      });
+
+      socket.on('text_response', (data) => {
+        addMessage('assistant', data.message);
+        sendBtn.disabled = false;
+        chatInput.disabled = false;
+        // Hide modal if still visible (shouldn't happen, but safety)
+        if (confirmationModal.classList.contains('active')) {
+          confirmationModal.classList.remove('active');
+          currentRequestId = null;
+        }
+      });
+
+      socket.on('text_error', (data) => {
+        addSystemMessage('Error: ' + data.error);
+        sendBtn.disabled = false;
+        chatInput.disabled = false;
+      });
+
+      socket.on('text_cleared', () => {
+        chatMessages.innerHTML = '';
+        addSystemMessage('Conversation cleared');
+      });
+
+      socket.on('confirmation_request', (data) => {
+        currentRequestId = data.request_id;
+        confirmationText.textContent = `Just to confirm sir, may I ${data.action_description}?`;
+        confirmationModal.classList.add('active');
+        // Disable chat input while waiting for confirmation
+        chatInput.disabled = true;
+        sendBtn.disabled = true;
+      });
+
+      socket.on('disconnect', () => {
+        addSystemMessage('Disconnected from server');
+      });
+    }
+
+    function addMessage(role, content) {
+      const messageDiv = document.createElement('div');
+      messageDiv.className = `message ${role}`;
+      messageDiv.textContent = content;
+      chatMessages.appendChild(messageDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function addSystemMessage(content) {
+      const messageDiv = document.createElement('div');
+      messageDiv.className = 'message system';
+      messageDiv.textContent = content;
+      chatMessages.appendChild(messageDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function sendMessage() {
+      const message = chatInput.value.trim();
+      if (!message || !conversationId) return;
+
+      addMessage('user', message);
+      chatInput.value = '';
+      sendBtn.disabled = true;
+      chatInput.disabled = true;
+
+      socket.emit('text_message', {
+        conversation_id: conversationId,
+        message: message
+      });
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    clearBtn.addEventListener('click', () => {
+      if (conversationId) {
+        socket.emit('text_clear', { conversation_id: conversationId });
+      }
+    });
+
+    // Confirmation modal handlers
+    confirmApprove.addEventListener('click', () => {
+      if (currentRequestId) {
+        socket.emit('confirmation_response', {
+          request_id: currentRequestId,
+          confirmed: true
+        });
+        currentRequestId = null;
+        confirmationModal.classList.remove('active');
+        // Re-enable chat input
+        chatInput.disabled = false;
+        sendBtn.disabled = false;
+      }
+    });
+
+    confirmCancel.addEventListener('click', () => {
+      if (currentRequestId) {
+        socket.emit('confirmation_response', {
+          request_id: currentRequestId,
+          confirmed: false
+        });
+        currentRequestId = null;
+        confirmationModal.classList.remove('active');
+        // Re-enable chat input
+        chatInput.disabled = false;
+        sendBtn.disabled = false;
+      }
+    });
+
+    // Initialize chat when chat tab is first activated
+    let chatInitialized = false;
+    document.querySelector('[data-tab="chat"]').addEventListener('click', () => {
+      if (!chatInitialized) {
+        chatInitialized = true;
+        connectToChat();
+      }
+    });
+
+    // Memory Management functionality
+    const memoryEditor = document.getElementById('memoryEditor');
+    const saveMemoryBtn = document.getElementById('saveMemory');
+    const reloadMemoryBtn = document.getElementById('reloadMemory');
+    const memoryStatus = document.getElementById('memoryStatus');
+
+    async function loadMemory() {
+      try {
+        const response = await fetch('/api/memory');
+        const data = await response.json();
+        memoryEditor.value = data.content;
+        showStatus('Memory loaded', 'success');
+      } catch (error) {
+        showStatus('Failed to load memory: ' + error.message, 'error');
+      }
+    }
+
+    async function saveMemory() {
+      try {
+        const response = await fetch('/api/memory', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ content: memoryEditor.value }),
+        });
+        const data = await response.json();
+        if (data.success) {
+          showStatus('Memory saved successfully', 'success');
+        } else {
+          showStatus('Failed to save memory: ' + data.error, 'error');
+        }
+      } catch (error) {
+        showStatus('Failed to save memory: ' + error.message, 'error');
+      }
+    }
+
+    function showStatus(message, type) {
+      memoryStatus.textContent = message;
+      memoryStatus.className = `status-message ${type}`;
+      setTimeout(() => {
+        memoryStatus.textContent = '';
+        memoryStatus.className = 'status-message';
+      }, 3000);
+    }
+
+    saveMemoryBtn.addEventListener('click', saveMemory);
+    reloadMemoryBtn.addEventListener('click', loadMemory);
+
+    // Load memory when memory tab is first activated
+    let memoryInitialized = false;
+    document.querySelector('[data-tab="memory"]').addEventListener('click', () => {
+      if (!memoryInitialized) {
+        memoryInitialized = true;
+        loadMemory();
+      }
+    });
+  </script>
+</body>
+</html>
