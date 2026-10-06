@@ -8,18 +8,26 @@ with open("key.txt", "r") as file:
 
 client = Groq(api_key=API_KEY)
 
-def prompt(user_message):
+def prompt(user_message, conversation_history=None):
+    messages = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT,
+        }
+    ]
+
+    # Add conversation history if provided
+    if conversation_history:
+        messages.extend(conversation_history)
+
+    # Add current user message
+    messages.append({
+        "role": "user",
+        "content": user_message,
+    })
+
     response = client.chat.completions.create(
-        messages=[
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT,
-            },
-            {
-                "role": "user",
-                "content": user_message,
-            }
-        ],
+        messages=messages,
         model="qwen/qwen3.8-27b",
         temperature=0.6,
         max_completion_tokens=1000,

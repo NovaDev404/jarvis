@@ -4,33 +4,84 @@ import stt
 import ai
 import tts
 import web_server
+import argparse
 
-web_server.start_in_thread(host="0.0.0.0", port=5009)
+parser = argparse.ArgumentParser(description="J.A.R.V.I.S. Voice Assistant")
+parser.add_argument("--https", action="store_true", help="Enable HTTPS with SSL certificates from certs/")
+args = parser.parse_args()
+
+web_server.start_in_thread(host="0.0.0.0", port=5009, use_https=args.https)
 ww = wakeword.WakeWord()
 stt.start()
 
+# Conversation listening timeout (seconds)
+CONVERSATION_TIMEOUT = 5.0
+
 try:
     while True:
+        # Wait for wake word
         ww.wait()
-        tts.start()
-        stt.flush()
-        text = stt.listen()
+        web_server.send_wake_word_detected()
 
-        if text:
-            print("You:", text)
-            stt.pause()
+        # Start conversation mode
+        conversation_history = []
+        web_server.send_conversation_start()
 
-            response = ai.prompt(text)
-            print("J.A.R.V.I.S: " + response)
-
-            try:
-                audio_path = tts.speak(response)
-                if audio_path is not None:
-                    web_server.send_tts(audio_path)
-            finally:
-                time.sleep(0.05)
+        text = None
+        while True:
+            # If we don't have text, listen for it
+            if text is None:
                 stt.flush()
-                stt.resume()
+                text = stt.listen()
+
+            if text:
+                print("You:", text)
+                stt.pause()
+
+                # Get AI response with conversation history
+                response = ai.prompt(text, conversation_history)
+                print("J.A.R.V.I.S:", response)
+
+                # Add to conversation history
+                conversation_history.append({"role": "user", "content": text})
+                conversation_history.append({"role": "assistant", "content": response})
+
+                # Start TTS for this turn
+                tts.start()
+
+                try:
+                    audio_path = tts.speak(response)
+                    if audio_path is not None:
+                        web_server.send_tts(audio_path)
+                        # Wait for client to finish playing audio
+                        web_server.wait_for_tts_finished()
+                finally:
+                    tts.stop()
+                    time.sleep(0.05)
+                    stt.flush()
+                    stt.resume()
+
+                # Listen for follow-up with 5-second timeout
+                print("Listening for follow-up...")
+                stt.flush()
+                follow_up = stt.listen(no_speech_timeout=CONVERSATION_TIMEOUT)
+                print(f"Follow-up received: '{follow_up}'")
+
+                if follow_up:
+                    # Process follow-up in next iteration
+                    text = follow_up
+                else:
+                    # No follow-up, end conversation
+                    print("Conversation ended - returning to wake word")
+                    break
+            else:
+                # No speech detected, end conversation
+                print("No speech detected - returning to wake word")
+                break
+
+        # Clear conversation history and go back to wake word
+        conversation_history = []
+        web_server.send_conversation_end()
 
 finally:
     stt.stop()

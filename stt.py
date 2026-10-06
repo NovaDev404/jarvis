@@ -112,11 +112,14 @@ def _clean_text(text):
         flags=re.IGNORECASE
     )
 
-    return text.strip()
+    cleaned = text.strip()
+    if cleaned:
+        print(f"Cleaned text: '{cleaned}'")
+    return cleaned
 
 
-def listen():
-    print("Listening...")
+def listen(no_speech_timeout=NO_SPEECH_TIMEOUT):
+    print(f"Listening... (timeout: {no_speech_timeout}s)")
 
     # --------------------------------------------------------
     # Remove stale frames that accumulated while waiting
@@ -275,9 +278,10 @@ def listen():
 
         if (
             not speech_started
-            and elapsed >= NO_SPEECH_TIMEOUT
+            and elapsed >= no_speech_timeout
         ):
 
+            print(f"No speech detected within {no_speech_timeout}s timeout")
             return ""
 
         # ----------------------------------------------------
@@ -296,6 +300,7 @@ def listen():
     # ========================================================
 
     if not frames:
+        print("No frames captured")
         return ""
 
     audio_data = np.concatenate(
@@ -308,6 +313,7 @@ def listen():
     )
 
     if duration < 0.25:
+        print(f"Audio too short: {duration:.2f}s")
         return ""
 
     # ========================================================
@@ -315,7 +321,7 @@ def listen():
     # ========================================================
 
     print("Transcribing...")
-    
+
     segments, info = model.transcribe(
         audio_data,
 

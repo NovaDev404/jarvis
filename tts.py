@@ -41,7 +41,7 @@ def stop():
 
 
 def speak(text):
-    """Send text to the running piper process, close stdin to trigger EOF."""
+    """Send text to the running piper process and wait for it to generate audio."""
     global piper_process, current_output_path
     if piper_process is None:
         raise RuntimeError("TTS model not loaded. Call start() first.")
@@ -50,20 +50,31 @@ def speak(text):
     if not text:
         return None
 
+    # Generate a new output path for this utterance
+    output_path = OUTPUT_DIR / f"jarvis_{uuid.uuid4().hex}.wav"
+
+    # Update the output file path for the running process
+    current_output_path = output_path
+
+    # Start a new piper process for this utterance
+    process = subprocess.Popen(
+        [
+            "piper",
+            "--model", str(MODEL_PATH),
+            "--output_file", str(output_path),
+        ],
+        stdin=subprocess.PIPE,
+        text=True,
+    )
+
     # Send text to piper
-    piper_process.stdin.write(text + "\n")
-    piper_process.stdin.flush()
+    process.stdin.write(text + "\n")
+    process.stdin.flush()
 
     # Close stdin to send EOF signal - piper will process and exit
-    piper_process.stdin.close()
+    process.stdin.close()
 
     # Wait for piper to finish
-    piper_process.wait()
-
-    output_path = current_output_path
-
-    # Clean up
-    piper_process = None
-    current_output_path = None
+    process.wait()
 
     return output_path
