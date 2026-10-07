@@ -66,10 +66,6 @@ def speak(text):
     if piper_process is None:
         raise RuntimeError("TTS model not loaded. Call start() first.")
 
-    # Generate a new output path for this utterance
-    output_path = OUTPUT_DIR / f"jarvis_{uuid.uuid4().hex}.wav"
-    current_output_path = output_path
-
     # Send text to the running piper process
     piper_process.stdin.write(text + "\n")
     piper_process.stdin.flush()
@@ -83,4 +79,4 @@ def speak(text):
     # Clear the process reference (caller must call start() again for next utterance)
     piper_process = None
 
-    return output_path
+    return current_output_path
