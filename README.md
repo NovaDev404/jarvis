@@ -2,14 +2,6 @@
 
 The server for a voice-controlled AI assistant that listens, processes, and responds like Tony Stark's AI assistant, J.A.R.V.I.S., from the MCU.
 
-## Progress
-
-- [x] Wake word detection
-- [x] Speech-to-text (STT)
-- [x] AI response generation
-- [x] Tool Calling
-- [x] Text-to-speech (TTS)
-
 ## Speed
 
 On average, J.A.R.V.I.S. responds in about four seconds on CPU after the user finishes talking.
