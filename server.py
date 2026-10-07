@@ -21,9 +21,13 @@ try:
         # Wait for wake word
         ww.wait()
         web_server.send_wake_word_detected()
+        overall_start = time.time()
+        print("[TIMING] Wake word detected")
 
         # Start TTS immediately after wake word
         tts.start()
+        tts_start_elapsed = time.time() - overall_start
+        print(f"[TIMING] TTS started in {tts_start_elapsed:.2f}s")
 
         # Start conversation mode
         conversation_history = []
@@ -34,6 +38,8 @@ try:
             # If we don't have text, listen for it
             if text is None:
                 stt.flush()
+                # Start timing when STT begins listening
+                turn_start = time.time()
                 text = stt.listen()
 
             if text:
@@ -50,6 +56,8 @@ try:
                 audio_path = tts.speak(response)
                 if audio_path is not None:
                     web_server.send_tts(audio_path)
+                    tts_speak_elapsed = time.time() - turn_start
+                    print(f"[TIMING] TTS audio sent to client in {tts_speak_elapsed:.2f}s")
                     # Wait for client to finish playing audio
                     web_server.wait_for_tts_finished()
                 
@@ -61,6 +69,8 @@ try:
                 # Listen for follow-up with 5-second timeout
                 print("Listening for follow-up...")
                 stt.flush()
+                # Reset timing for follow-up STT
+                turn_start = time.time()
                 follow_up = stt.listen(no_speech_timeout=CONVERSATION_TIMEOUT)
                 print(f"Follow-up received: '{follow_up}'")
 

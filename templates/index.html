@@ -884,9 +884,14 @@
               status.textContent = " Connection error. ";
               stopRecording();
               const beginBtn = document.getElementById("beginBtn");
+              const orbContainer = document.getElementById("orbContainer");
               if (beginBtn) {
                 beginBtn.style.display = "block";
               }
+              if (orbContainer) {
+                orbContainer.style.display = "none";
+              }
+              status.style.display = "none";
             });
           socket.on("disconnect",
             () => {
