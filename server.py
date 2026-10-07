@@ -22,6 +22,9 @@ try:
         ww.wait()
         web_server.send_wake_word_detected()
 
+        # Start TTS immediately after wake word
+        tts.start()
+
         # Start conversation mode
         conversation_history = []
         web_server.send_conversation_start()
@@ -36,9 +39,6 @@ try:
             if text:
                 print("You:", text)
 
-                # Start TTS before AI prompt (needed for tool confirmations)
-                tts.start()
-
                 # Get AI response with conversation history
                 response = ai.prompt(text, conversation_history)
                 print("J.A.R.V.I.S:", response)
@@ -47,16 +47,16 @@ try:
                 conversation_history.append({"role": "user", "content": text})
                 conversation_history.append({"role": "assistant", "content": response})
 
-                try:
-                    audio_path = tts.speak(response)
-                    if audio_path is not None:
-                        web_server.send_tts(audio_path)
-                        # Wait for client to finish playing audio
-                        web_server.wait_for_tts_finished()
-                finally:
-                    tts.stop()
-                    time.sleep(0.05)
-                    stt.flush()
+                audio_path = tts.speak(response)
+                if audio_path is not None:
+                    web_server.send_tts(audio_path)
+                    # Wait for client to finish playing audio
+                    web_server.wait_for_tts_finished()
+                
+                # Restart TTS for next response
+                tts.start()
+                time.sleep(0.05)
+                stt.flush()
 
                 # Listen for follow-up with 5-second timeout
                 print("Listening for follow-up...")
@@ -79,6 +79,9 @@ try:
         # Clear conversation history and go back to wake word
         conversation_history = []
         web_server.send_conversation_end()
+        
+        # Stop TTS when returning to wake word
+        tts.stop()
 
 finally:
     tts.stop()

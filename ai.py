@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from groq import Groq
 import tools
 import tts
@@ -89,6 +90,8 @@ def prompt(user_message, conversation_history=None, text_mode=False, conversatio
 
     # Loop to handle multiple rounds of tool calls
     while True:
+        start_time = time.time()
+        print(f"[AI] Calling Groq API...")
         response = client.chat.completions.create(
             messages=messages,
             model="qwen/qwen3.8-27b",
@@ -99,6 +102,8 @@ def prompt(user_message, conversation_history=None, text_mode=False, conversatio
             tools=tools.tools,
             tool_choice="auto",
         )
+        elapsed = time.time() - start_time
+        print(f"[AI] Groq API call completed in {elapsed:.2f}s")
 
         response_message = response.choices[0].message
         tool_calls = response_message.tool_calls

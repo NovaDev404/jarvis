@@ -2,6 +2,7 @@ from pathlib import Path
 import tempfile
 import uuid
 import subprocess
+import threading
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -11,33 +12,40 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 piper_process = None
 current_output_path = None
+loading_thread = None
 
 
 def start():
-    """Start the piper subprocess so the model is loaded and ready for input."""
-    global piper_process, current_output_path
-    if piper_process is None:
-        current_output_path = OUTPUT_DIR / f"jarvis_{uuid.uuid4().hex}.wav"
-        print("Loading TTS model...")
-        piper_process = subprocess.Popen(
-            [
-                "piper",
-                "--model", str(MODEL_PATH),
-                "--output_file", str(current_output_path),
-            ],
-            stdin=subprocess.PIPE,
-            text=True,
-        )
-        print("TTS model loaded.")
+    """Start the piper subprocess so the model is loaded and ready for input (fire and forget)."""
+    global piper_process, current_output_path, loading_thread
+    if piper_process is None and loading_thread is None:
+        def load_model():
+            global piper_process, current_output_path
+            current_output_path = OUTPUT_DIR / f"jarvis_{uuid.uuid4().hex}.wav"
+            print("Loading TTS model...")
+            piper_process = subprocess.Popen(
+                [
+                    "piper",
+                    "--model", str(MODEL_PATH),
+                    "--output_file", str(current_output_path),
+                ],
+                stdin=subprocess.PIPE,
+                text=True,
+            )
+            print("TTS model loaded.")
+        
+        loading_thread = threading.Thread(target=load_model, daemon=True)
+        loading_thread.start()
 
 
 def stop():
     """Stop the piper subprocess."""
-    global piper_process, current_output_path
+    global piper_process, current_output_path, loading_thread
     if piper_process is not None:
         piper_process.terminate()
         piper_process = None
         current_output_path = None
+    loading_thread = None
 
 
 def speak(text):

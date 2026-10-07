@@ -107,6 +107,7 @@ def _clean_text(text):
 
 def listen(no_speech_timeout=NO_SPEECH_TIMEOUT):
     print(f"Listening... (timeout: {no_speech_timeout}s)")
+    overall_start = time.time()
 
     # --------------------------------------------------------
     # Remove stale frames that accumulated while waiting
@@ -134,6 +135,7 @@ def listen(no_speech_timeout=NO_SPEECH_TIMEOUT):
     silence_samples = 0
 
     listen_started_at = time.monotonic()
+    speech_start_time = None
 
     while True:
         frame = audio_queue.get_stt_chunk(
@@ -191,6 +193,9 @@ def listen(no_speech_timeout=NO_SPEECH_TIMEOUT):
                 if speech_start_count >= START_FRAMES:
 
                     speech_started = True
+                    speech_start_time = time.time()
+                    speech_wait_elapsed = speech_start_time - overall_start
+                    print(f"[STT] Speech detected after {speech_wait_elapsed:.2f}s")
 
                     # Restore the previous ~800 ms.
                     pre_roll = audio_queue.get_history(
@@ -245,6 +250,9 @@ def listen(no_speech_timeout=NO_SPEECH_TIMEOUT):
             )
 
         if ended:
+            speech_end_time = time.time()
+            capture_elapsed = speech_end_time - speech_start_time
+            print(f"[STT] Audio capture completed in {capture_elapsed:.2f}s")
             break
 
         elapsed = (
@@ -301,6 +309,7 @@ def listen(no_speech_timeout=NO_SPEECH_TIMEOUT):
     # ========================================================
 
     print("Transcribing...")
+    transcribe_start = time.time()
 
     segments, info = model.transcribe(
         audio_data,
@@ -328,5 +337,11 @@ def listen(no_speech_timeout=NO_SPEECH_TIMEOUT):
         for segment in segments
         if segment.text.strip()
     )
+
+    transcribe_elapsed = time.time() - transcribe_start
+    print(f"[STT] Transcription completed in {transcribe_elapsed:.2f}s")
+
+    overall_elapsed = time.time() - overall_start
+    print(f"[STT] Total STT time: {overall_elapsed:.2f}s")
 
     return _clean_text(text)

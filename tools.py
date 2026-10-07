@@ -2,6 +2,7 @@ import json
 import subprocess
 import os
 import difflib
+import shutil
 from datetime import datetime
 
 # ============================================================
@@ -161,6 +162,42 @@ tools = [
             }
         },
         "critical": True
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_file",
+            "description": "Delete a file",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The file path to delete"
+                    }
+                },
+                "required": ["path"]
+            }
+        },
+        "critical": True
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_directory",
+            "description": "Delete a directory and all its contents",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The directory path to delete"
+                    }
+                },
+                "required": ["path"]
+            }
+        },
+        "critical": True
     }
 ]
 
@@ -216,7 +253,8 @@ def list_directory(path=None):
     if path is None:
         path = os.path.expanduser("~")
     else:
-        # Resolve relative paths from home directory
+        # Expand ~ and resolve relative paths
+        path = os.path.expanduser(path)
         if not os.path.isabs(path):
             path = os.path.join(os.path.expanduser("~"), path)
     try:
@@ -229,7 +267,8 @@ def list_directory(path=None):
 
 def read_file(path):
     """Read the contents of a file"""
-    # Resolve relative paths from home directory
+    # Expand ~ and resolve relative paths
+    path = os.path.expanduser(path)
     if not os.path.isabs(path):
         path = os.path.join(os.path.expanduser("~"), path)
     try:
@@ -242,7 +281,8 @@ def read_file(path):
 
 def write_file(path, content, mode="overwrite"):
     """Write content to a file"""
-    # Resolve relative paths from home directory
+    # Expand ~ and resolve relative paths
+    path = os.path.expanduser(path)
     if not os.path.isabs(path):
         path = os.path.join(os.path.expanduser("~"), path)
     try:
@@ -262,7 +302,8 @@ def write_file(path, content, mode="overwrite"):
 
 def apply_patch(path, patch):
     """Apply a unified diff patch to a file"""
-    # Resolve relative paths from home directory
+    # Expand ~ and resolve relative paths
+    path = os.path.expanduser(path)
     if not os.path.isabs(path):
         path = os.path.join(os.path.expanduser("~"), path)
     try:
@@ -286,6 +327,34 @@ def apply_patch(path, patch):
     except Exception as e:
         return f"Error applying patch: {str(e)}"
 
+def delete_file(path):
+    """Delete a file"""
+    # Expand ~ and resolve relative paths
+    path = os.path.expanduser(path)
+    if not os.path.isabs(path):
+        path = os.path.join(os.path.expanduser("~"), path)
+    try:
+        os.remove(path)
+        return f"File deleted: {path}"
+    except FileNotFoundError:
+        return f"File not found: {path}"
+    except Exception as e:
+        return f"Error deleting file: {str(e)}"
+
+def delete_directory(path):
+    """Delete a directory and all its contents"""
+    # Expand ~ and resolve relative paths
+    path = os.path.expanduser(path)
+    if not os.path.isabs(path):
+        path = os.path.join(os.path.expanduser("~"), path)
+    try:
+        shutil.rmtree(path)
+        return f"Directory deleted: {path}"
+    except FileNotFoundError:
+        return f"Directory not found: {path}"
+    except Exception as e:
+        return f"Error deleting directory: {str(e)}"
+
 available_functions = {
     "get_time": get_time,
     "add_memory": add_memory,
@@ -294,5 +363,7 @@ available_functions = {
     "list_directory": list_directory,
     "read_file": read_file,
     "write_file": write_file,
-    "apply_patch": apply_patch
+    "apply_patch": apply_patch,
+    "delete_file": delete_file,
+    "delete_directory": delete_directory
 }
