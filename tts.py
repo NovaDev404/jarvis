@@ -30,6 +30,8 @@ def start():
                     "--output_file", str(current_output_path),
                 ],
                 stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
             )
             print("TTS model loaded.")
@@ -50,39 +52,35 @@ def stop():
 
 def speak(text):
     """Send text to the running piper process and wait for it to generate audio."""
-    global piper_process, current_output_path
-    if piper_process is None:
-        raise RuntimeError("TTS model not loaded. Call start() first.")
+    global piper_process, current_output_path, loading_thread
 
     text = str(text or "").strip()
     if not text:
         return None
 
+    # Wait for the initial load to complete if still loading
+    if loading_thread is not None:
+        loading_thread.join()
+        loading_thread = None
+
+    if piper_process is None:
+        raise RuntimeError("TTS model not loaded. Call start() first.")
+
     # Generate a new output path for this utterance
     output_path = OUTPUT_DIR / f"jarvis_{uuid.uuid4().hex}.wav"
-
-    # Update the output file path for the running process
     current_output_path = output_path
 
-    # Start a new piper process for this utterance
-    process = subprocess.Popen(
-        [
-            "piper",
-            "--model", str(MODEL_PATH),
-            "--output_file", str(output_path),
-        ],
-        stdin=subprocess.PIPE,
-        text=True,
-    )
-
-    # Send text to piper
-    process.stdin.write(text + "\n")
-    process.stdin.flush()
+    # Send text to the running piper process
+    piper_process.stdin.write(text + "\n")
+    piper_process.stdin.flush()
 
     # Close stdin to send EOF signal - piper will process and exit
-    process.stdin.close()
+    piper_process.stdin.close()
 
     # Wait for piper to finish
-    process.wait()
+    piper_process.wait()
+
+    # Clear the process reference (caller must call start() again for next utterance)
+    piper_process = None
 
     return output_path

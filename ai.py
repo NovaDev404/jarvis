@@ -126,8 +126,17 @@ def prompt(user_message, conversation_history=None, text_mode=False, conversatio
             is_critical = tool_def and tool_def.get("critical", False)
 
             if is_critical:
-                # Generate action description for confirmation
-                action_desc = f"{function_name} with {function_args}"
+                # Generate action description for confirmation using template
+                template = tool_def.get("confirmation_template")
+                if template:
+                    try:
+                        action_desc = template.format(**function_args)
+                    except (KeyError, ValueError):
+                        # Fallback if template formatting fails
+                        action_desc = f"{function_name} with {function_args}"
+                else:
+                    # Fallback if no template defined
+                    action_desc = f"{function_name} with {function_args}"
                 confirmation = get_confirmation(action_desc, text_mode=text_mode, conversation_id=conversation_id)
 
                 if confirmation is None:
