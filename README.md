@@ -7,7 +7,7 @@ The server for a voice-controlled AI assistant that listens, processes, and resp
 - [x] Wake word detection
 - [x] Speech-to-text (STT)
 - [x] AI response generation
-- [ ] Tool Calling
+- [x] Tool Calling
 - [x] Text-to-speech (TTS)
 
 ## Speed
