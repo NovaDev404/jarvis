@@ -4,7 +4,7 @@ The server for a voice-controlled AI assistant that listens, processes, and resp
 
 ## Speed
 
-On average, J.A.R.V.I.S. responds in about four seconds on CPU after the user finishes talking.
+On average, J.A.R.V.I.S. responds in about 2-4 seconds on CPU after the user finishes talking.
 
 ## How It Works
 
