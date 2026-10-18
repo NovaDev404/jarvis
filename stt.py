@@ -15,7 +15,8 @@ import audio_queue
 model = WhisperModel(
     "distil-small.en",
     device="cpu",
-    compute_type="int8"
+    compute_type="int8",
+    cpu_threads=3
 )
 
 

@@ -10,6 +10,7 @@ from .apply_patch import tool as apply_patch_tool
 from .delete_file import tool as delete_file_tool
 from .delete_directory import tool as delete_directory_tool
 from .send_email import tool as send_email_tool
+from .calculator import tool as calculator_tool
 
 # Aggregate all tool definitions
 tools = [
@@ -23,7 +24,8 @@ tools = [
     apply_patch_tool,
     delete_file_tool,
     delete_directory_tool,
-    send_email_tool
+    send_email_tool,
+    calculator_tool
 ]
 
 # Aggregate all function implementations
@@ -38,7 +40,8 @@ available_functions = {
     "apply_patch": apply_patch_tool["function"]["implementation"],
     "delete_file": delete_file_tool["function"]["implementation"],
     "delete_directory": delete_directory_tool["function"]["implementation"],
-    "send_email": send_email_tool["function"]["implementation"]
+    "send_email": send_email_tool["function"]["implementation"],
+    "calculator": calculator_tool["function"]["implementation"]
 }
 
 def get_api_tools():
