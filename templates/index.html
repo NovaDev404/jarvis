@@ -402,6 +402,7 @@
       let source = null;
       let workletNode = null;
       let muteGain = null;
+      let videoPlayed = false;
       /*
        * ------------------------------------------------
        * TTS playback state
@@ -696,15 +697,22 @@
         const status = document.getElementById("status");
 
         beginBtn.style.display = "none";
-        loadingVideo.style.display = "block";
-        loadingVideo.currentTime = 0;
-        await loadingVideo.play();
 
-        loadingVideo.onended = () => {
-          loadingVideo.style.display = "none";
+        if (!videoPlayed) {
+          loadingVideo.style.display = "block";
+          loadingVideo.currentTime = 0;
+          await loadingVideo.play();
+          videoPlayed = true;
+
+          loadingVideo.onended = () => {
+            loadingVideo.style.display = "none";
+            orbContainer.style.display = "block";
+            startRecording();
+          };
+        } else {
           orbContainer.style.display = "block";
           startRecording();
-        };
+        }
       }
 
       async function startRecording() {
@@ -881,25 +889,11 @@
           socket.on("connect_error",
             (error) => {
               console.error("Socket.IO connection error:", error);
-              status.textContent = " Connection error. ";
-              stopRecording();
-              const beginBtn = document.getElementById("beginBtn");
-              const orbContainer = document.getElementById("orbContainer");
-              if (beginBtn) {
-                beginBtn.style.display = "block";
-              }
-              if (orbContainer) {
-                orbContainer.style.display = "none";
-              }
-              status.style.display = "none";
+              status.textContent = " Connection error. Retrying... ";
             });
           socket.on("disconnect",
             () => {
-              status.textContent = " Disconnected. ";
-              const beginBtn = document.getElementById("beginBtn");
-              if (beginBtn) {
-                beginBtn.style.display = "block";
-              }
+              status.textContent = " Disconnected. Waiting for reconnection... ";
             });
         } catch (error) {
           console.error("Microphone error:", error);

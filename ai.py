@@ -49,6 +49,7 @@ def get_confirmation(action_description, text_mode=False, conversation_id=None):
         if audio_path is not None:
             web_server.send_tts(audio_path)
             web_server.wait_for_tts_finished()
+            tts.start()
         
         # Listen for response
         stt.flush()
@@ -74,6 +75,7 @@ def get_confirmation(action_description, text_mode=False, conversation_id=None):
         if audio_path is not None:
             web_server.send_tts(audio_path)
             web_server.wait_for_tts_finished()
+            tts.start()
 
 def prompt(user_message, conversation_history=None, text_mode=False, conversation_id=None):
     # Load memory content

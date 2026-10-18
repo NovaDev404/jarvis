@@ -55,8 +55,8 @@ VAD_SILENCE_THRESHOLD = 0.35
 # 2 × 30 ms = ~60 ms of confirmed speech.
 START_FRAMES = 2
 
-# End after ~650 ms of continuous non-speech.
-END_SILENCE_SECONDS = 0.65
+# End after ~750 ms of continuous non-speech.
+END_SILENCE_SECONDS = 0.75
 
 # Keep recent audio so the start of speech isn't chopped.
 PRE_ROLL_SECONDS = 0.80

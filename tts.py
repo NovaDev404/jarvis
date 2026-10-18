@@ -13,28 +13,34 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 piper_process = None
 current_output_path = None
 loading_thread = None
+loading_error = None
 
 
 def start():
     """Start the piper subprocess so the model is loaded and ready for input (fire and forget)."""
-    global piper_process, current_output_path, loading_thread
+    global piper_process, current_output_path, loading_thread, loading_error
     if piper_process is None and loading_thread is None:
+        loading_error = None
         def load_model():
-            global piper_process, current_output_path
-            current_output_path = OUTPUT_DIR / f"jarvis_{uuid.uuid4().hex}.wav"
-            print("Loading TTS model...")
-            piper_process = subprocess.Popen(
-                [
-                    "piper",
-                    "--model", str(MODEL_PATH),
-                    "--output_file", str(current_output_path),
-                ],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            print("TTS model loaded.")
+            global piper_process, current_output_path, loading_error
+            try:
+                current_output_path = OUTPUT_DIR / f"jarvis_{uuid.uuid4().hex}.wav"
+                print("Loading TTS model...")
+                piper_process = subprocess.Popen(
+                    [
+                        "piper",
+                        "--model", str(MODEL_PATH),
+                        "--output_file", str(current_output_path),
+                    ],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                print("TTS model loaded.")
+            except Exception as e:
+                loading_error = e
+                print(f"TTS model loading failed: {e}")
         
         loading_thread = threading.Thread(target=load_model, daemon=True)
         loading_thread.start()
@@ -42,17 +48,18 @@ def start():
 
 def stop():
     """Stop the piper subprocess."""
-    global piper_process, current_output_path, loading_thread
+    global piper_process, current_output_path, loading_thread, loading_error
     if piper_process is not None:
         piper_process.terminate()
         piper_process = None
         current_output_path = None
     loading_thread = None
+    loading_error = None
 
 
 def speak(text):
     """Send text to the running piper process and wait for it to generate audio."""
-    global piper_process, current_output_path, loading_thread
+    global piper_process, current_output_path, loading_thread, loading_error
 
     text = str(text or "").strip()
     if not text:
@@ -62,6 +69,9 @@ def speak(text):
     if loading_thread is not None:
         loading_thread.join()
         loading_thread = None
+
+    if loading_error is not None:
+        raise RuntimeError(f"TTS model loading failed: {loading_error}")
 
     if piper_process is None:
         raise RuntimeError("TTS model not loaded. Call start() first.")
