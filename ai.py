@@ -9,6 +9,7 @@ import tools
 import tts
 import stt
 import web_server
+import command_parser
 
 load_dotenv()
 
@@ -31,6 +32,15 @@ elif AI_PROVIDER == "groq":
     MODEL_NAME = "qwen/qwen3.8-27b"
 else:
     raise ValueError(f"Invalid AI_PROVIDER: {AI_PROVIDER}. Must be 'cerebras' or 'groq'")
+
+def _get_readable_description(function_name, function_args):
+    """Convert tool call to readable natural language description."""
+    if function_name == "run_command" and "command" in function_args:
+        command = function_args["command"]
+        readable = command_parser.parse_command_to_text(command)
+        return f"Calling run_command: {readable}"
+    else:
+        return f"Calling {function_name} with args: {function_args}"
 
 def get_confirmation(action_description, text_mode=False, conversation_id=None):
     """Ask user for confirmation via TTS/STT (voice) or WebSocket (text) for critical actions."""
@@ -150,6 +160,10 @@ def prompt(user_message, conversation_history=None, text_mode=False, conversatio
                 if template:
                     try:
                         action_desc = template.format(**function_args)
+                        # For run_command, also provide readable version
+                        if function_name == "run_command" and "command" in function_args:
+                            readable = command_parser.parse_command_to_text(function_args["command"])
+                            action_desc = f"{readable}"
                     except (KeyError, ValueError):
                         # Fallback if template formatting fails
                         action_desc = f"{function_name} with {function_args}"
@@ -164,12 +178,14 @@ def prompt(user_message, conversation_history=None, text_mode=False, conversatio
                     function_response = "Action declined by user"
                 else:
                     # User confirmed, proceed with execution
-                    print(f"[TOOL] Calling {function_name} with args: {function_args}")
+                    readable_desc = _get_readable_description(function_name, function_args)
+                    print(f"[TOOL] {readable_desc}")
                     function_response = function_to_call(**function_args)
                     print(f"[TOOL] {function_name} result: {function_response}")
             else:
                 # Non-critical tool, execute directly
-                print(f"[TOOL] Calling {function_name} with args: {function_args}")
+                readable_desc = _get_readable_description(function_name, function_args)
+                print(f"[TOOL] {readable_desc}")
                 function_response = function_to_call(**function_args)
                 print(f"[TOOL] {function_name} result: {function_response}")
 
