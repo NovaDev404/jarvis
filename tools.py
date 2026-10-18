@@ -9,6 +9,7 @@ from datetime import datetime
 # Tool Definitions
 # ============================================================
 
+# Full tool definitions with local metadata (critical, confirmation_template)
 tools = [
     {
         "type": "function",
@@ -206,6 +207,18 @@ tools = [
         "confirmation_template": "permanently delete the directory {path}"
     }
 ]
+
+# API-compatible tool definitions (removes local metadata like critical, confirmation_template)
+def get_api_tools():
+    """Return tool definitions compatible with AI APIs (removes local metadata)"""
+    api_tools = []
+    for tool in tools:
+        api_tool = {
+            "type": tool["type"],
+            "function": tool["function"].copy()
+        }
+        api_tools.append(api_tool)
+    return api_tools
 
 # ============================================================
 # Tool Implementations

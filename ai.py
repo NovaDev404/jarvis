@@ -1,19 +1,36 @@
 import json
 import re
 import time
+import os
+from dotenv import load_dotenv
+from cerebras.cloud.sdk import Cerebras
 from groq import Groq
 import tools
 import tts
 import stt
 import web_server
 
+load_dotenv()
+
 with open("prompt.txt", "r") as file:
     SYSTEM_PROMPT = file.read()
 
-with open("key.txt", "r") as file:
-    API_KEY = file.read()
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "cerebras").lower()
 
-client = Groq(api_key=API_KEY)
+if AI_PROVIDER == "cerebras":
+    API_KEY = os.environ.get("CEREBRAS_API_KEY")
+    if not API_KEY:
+        raise ValueError("CEREBRAS_API_KEY not found in environment variables")
+    client = Cerebras(api_key=API_KEY)
+    MODEL_NAME = "qwen-3.8-27b"
+elif AI_PROVIDER == "groq":
+    API_KEY = os.environ.get("GROQ_API_KEY")
+    if not API_KEY:
+        raise ValueError("GROQ_API_KEY not found in environment variables")
+    client = Groq(api_key=API_KEY)
+    MODEL_NAME = "qwen/qwen3.8-27b"
+else:
+    raise ValueError(f"Invalid AI_PROVIDER: {AI_PROVIDER}. Must be 'cerebras' or 'groq'")
 
 def get_confirmation(action_description, text_mode=False, conversation_id=None):
     """Ask user for confirmation via TTS/STT (voice) or WebSocket (text) for critical actions."""
@@ -91,19 +108,19 @@ def prompt(user_message, conversation_history=None, text_mode=False, conversatio
     # Loop to handle multiple rounds of tool calls
     while True:
         start_time = time.time()
-        print(f"[AI] Calling Groq API...")
+        print(f"[AI] Calling {AI_PROVIDER.capitalize()} API...")
         response = client.chat.completions.create(
             messages=messages,
-            model="qwen/qwen3.8-27b",
+            model=MODEL_NAME,
             temperature=0.6,
             max_completion_tokens=1000,
             top_p=0.95,
             stream=False,
-            tools=tools.tools,
+            tools=tools.get_api_tools(),
             tool_choice="auto",
         )
         elapsed = time.time() - start_time
-        print(f"[AI] Groq API call completed in {elapsed:.2f}s")
+        print(f"[AI] {AI_PROVIDER.capitalize()} API call completed in {elapsed:.2f}s")
 
         response_message = response.choices[0].message
         tool_calls = response_message.tool_calls

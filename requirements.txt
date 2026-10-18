@@ -1,0 +1,8 @@
+cerebras-cloud-sdk
+groq
+python-dotenv
+flask
+flask-socketio
+openwakeword
+faster-whisper
+piper-tts
